@@ -210,7 +210,13 @@ function EntraSettings() {
           break
         }
       }
+      // Ran out of attempts without lastSyncedAt moving. Most often the worker
+      // is not running or is still churning through a large tenant; either way
+      // silence here reads as "the button does nothing".
       setSyncing(false)
+      toast.warning(
+        "The directory sync hasn't completed yet. If it never does, check that the ClauseFlow worker process is running.",
+      )
     },
     [hydrate],
   )
@@ -275,7 +281,11 @@ function EntraSettings() {
       const res = await fetch("/api/entra/sync", { method: "POST" })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
-        toast.error(body.error ?? "Couldn't queue the directory sync")
+        // The no-worker case is a deployment problem, not a transient one, so
+        // give it a long toast — it needs reading, not glancing at.
+        toast.error(body.error ?? "Couldn't queue the directory sync", {
+          duration: body.noWorker ? 15_000 : undefined,
+        })
         setSyncing(false)
         return
       }

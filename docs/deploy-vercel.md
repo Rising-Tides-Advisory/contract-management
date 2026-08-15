@@ -19,7 +19,21 @@ that keeps a process alive — Fly.io, Railway, Render, or any small VM.
 The repo already ships `fly.toml` pointing at `apps/web/Dockerfile.worker` for this.
 
 Without a running worker the app still works, but uploads are never text-extracted,
-embeddings and AI extraction never run, and renewal alerts never fire.
+embeddings and AI extraction never run, renewal alerts never fire, and Entra
+directory syncs are queued and never processed.
+
+**The worker does not deploy itself.** Vercel redeploys the app on every push to
+`main`, but nothing redeploys the worker — there is no CI job for it. Any change
+under `apps/web/worker.ts` or the `lib/` code it imports, and in particular any
+*new* queue, only reaches production when someone runs `fly deploy` (or the
+equivalent for whatever host you use). A worker built before a queue existed
+silently ignores that queue's jobs: they enqueue successfully and are never
+consumed, which looks like a feature that does nothing rather than an error.
+
+```bash
+fly deploy -c fly.toml          # from the repo root, after any worker change
+fly logs -a aakd-worker         # confirm it booted and registered its crons
+```
 
 ---
 
@@ -211,6 +225,65 @@ Shared Environment Variable group at the team level.
 | `DOCUSEAL_API_KEY` · `DOCUSEAL_WEBHOOK_SECRET` | Optional — required for signing |
 
 The worker host needs the same values, minus the `NEXT_PUBLIC_*` and auth URL entries.
+
+---
+
+## 6. The worker host
+
+The worker is one long-lived process built from `apps/web/Dockerfile.worker`. It
+listens on no ports and serves no traffic — it polls Redis, runs jobs, and holds the
+five repeating crons (renewal alerts, obligation checks, signing sync, Salesforce
+poll, Entra directory sync). Any host that keeps a container running works; nothing
+below is Fly-specific beyond the CLI.
+
+Give it `DATABASE_URL`, `DIRECT_URL`, `REDIS_URL`, `NOTIFICATION_ENCRYPTION_KEY`,
+`ENCRYPTION_KEY`, the storage credentials, and — if you want mail — the Postmark or
+SMTP block. It does not need `NEXT_PUBLIC_APP_URL`, `BETTER_AUTH_URL`, or
+`INTERNAL_APP_URL`. `DATABASE_POOL_SIZE` should be left unset: the worker is a
+long-lived process and wants the default of 20, not the 1 that suits Vercel.
+
+**Fly** — `fly.toml` already points at the worker Dockerfile:
+
+```bash
+fly launch --no-deploy -c fly.toml     # first time only
+fly secrets set DATABASE_URL=... REDIS_URL=... NOTIFICATION_ENCRYPTION_KEY=...
+fly deploy -c fly.toml
+```
+
+**Railway** — `railway.json` in the repo root already selects the Dockerfile builder,
+pins the worker Dockerfile, and sets an always-on restart policy, so a service created
+from this repo picks it up with no further build configuration. Leave the service's
+**root directory** at the repo root: the Dockerfile copies from `apps/web/` and
+`worker/`, so a narrower context fails to build. Add the env vars below, and leave the
+health check unset — the worker never opens a port, so a port-based check restarts it
+forever. Railway redeploys on every push to `main`, which is the point: the worker
+cannot fall behind the app.
+
+If you later run a second Railway service from this repo, point that one at its own
+config with **Settings → Config-as-code → Config file path**, since a bare
+`railway.json` at the root applies to every service that does not override it.
+
+**Render** — create a Background Worker from this repo with the Dockerfile path set to
+`apps/web/Dockerfile.worker` and the build context at the repo root, add the same env
+vars, and leave the health check unset for the same reason.
+
+**Any VM with Docker** —
+
+```bash
+docker build -f apps/web/Dockerfile.worker -t clauseflow-worker .
+docker run -d --restart=always --env-file worker.env clauseflow-worker
+```
+
+Confirm it came up by looking for the cron registrations in the logs:
+
+```
+[alerts] Daily cron registered (0 9 * * *)
+[obligations] Daily cron registered (0 9 * * *)
+[entra.sync] Daily cron registered (0 4 * * *)
+```
+
+If those lines are absent the process is not booting; if they are present but jobs
+never complete, it cannot reach Redis or Postgres.
 
 ---
 
