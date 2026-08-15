@@ -73,7 +73,12 @@ export function DocumentDateReview({
   }
 
   return (
-    <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4">
+    // The date column is a fixed width and the document takes what is left, so
+    // the document is what suffers if the dialog is ever narrower than the two
+    // together. minmax(0,…) stops the iframe from forcing an overflow, and
+    // below lg the two stack — the document keeping the leftover height —
+    // rather than being squeezed into a column too narrow to read.
+    <div className="flex-1 min-h-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,1fr)_260px] lg:grid-rows-1 gap-4">
       {/* ── Document ─────────────────────────────────────────────── */}
       <div className="min-h-0 rounded-[var(--radius)] border border-border bg-muted/30 overflow-hidden">
         {source.kind === "loading" ? (
