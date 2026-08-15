@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import { Pool } from "pg"
+import { getDatabaseUrl, getPoolSize } from "@/lib/db/connection"
 import { getRequestContext } from "@/lib/context"
 import { logger } from "@/lib/logger"
 
@@ -29,8 +30,8 @@ type ScopedQueryArgs = {
 
 function createPrismaClient() {
   const pool = new Pool({
-    connectionString: process.env.DATABASE_URL ?? "",
-    max: parseInt(process.env.DATABASE_POOL_SIZE ?? "20", 10),
+    connectionString: getDatabaseUrl(),
+    max: getPoolSize(),
   })
 
   const adapter = new PrismaPg(pool)

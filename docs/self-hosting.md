@@ -81,7 +81,8 @@ Navigate to `http://localhost:3000` (or your configured URL). Create your first 
 
 | Variable | Description |
 |---|---|
-| `DATABASE_URL` | PostgreSQL connection string. Set automatically by Docker Compose. |
+| `DATABASE_URL` | PostgreSQL connection string (pooled). Set automatically by Docker Compose. |
+| `DIRECT_URL` | Direct, non-pooled connection string. **Required with any transaction pooler** (Neon, Supabase) — `prisma migrate` takes an advisory lock and runs DDL, neither of which survives one. Falls back to `DATABASE_URL` when unset. Accepted aliases: `DATABASE_URL_UNPOOLED` (Neon), `POSTGRES_URL_NON_POOLING` (Supabase). |
 | `POSTGRES_PASSWORD` | Postgres password. Generate: `openssl rand -base64 24` |
 | `BETTER_AUTH_SECRET` | Auth signing secret. Generate: `openssl rand -base64 32` |
 | `BETTER_AUTH_URL` | Full URL of your ClauseFlow instance (e.g. `https://clm.yourcompany.com`) |
@@ -102,6 +103,23 @@ For **AWS S3**: set `STORAGE_ENDPOINT=` (empty), and set your real `STORAGE_ACCE
 
 For **MinIO** (self-hosted): set `STORAGE_ENDPOINT=http://minio:9000` and choose your own credentials.
 
+For **Cloudflare R2**: set the `R2_*` variables instead of the `STORAGE_*` block. The
+endpoint is derived from the account id and the region is forced to `auto`.
+
+| Variable | Description |
+|---|---|
+| `R2_ACCOUNT_ID` | Cloudflare account id (the 32-char hex string in your R2 endpoint) |
+| `R2_ACCESS_KEY_ID` | From an R2 API token with **Object Read & Write** on the bucket |
+| `R2_SECRET_ACCESS_KEY` | From the same token (shown once at creation) |
+| `R2_BUCKET` | Bucket name |
+
+Create the credentials at Cloudflare dashboard → R2 → Manage API tokens → Create API token.
+
+> R2 needs `region: "auto"` and checksum calculation set to `WHEN_REQUIRED` — the
+> storage client applies both automatically when it detects an R2 endpoint. Without
+> the checksum setting, uploads fail because the AWS SDK adds a CRC32 streaming
+> trailer that R2's S3 API does not accept.
+
 ### AI Providers (optional — features degrade gracefully without)
 
 ClauseFlow supports three AI backends. Set `AI_PROVIDER` to select one, or leave it empty to auto-detect from which key is present.
@@ -119,7 +137,25 @@ ClauseFlow supports three AI backends. Set `AI_PROVIDER` to select one, or leave
 
 > **BYOK (Bring Your Own Key):** ClauseFlow never stores your AI API keys beyond your own `.env` file. You control costs entirely. AI features (extraction, Q&A, semantic search) work out of the box once a key is configured. The app runs without any AI key — AI features are gracefully disabled.
 
-### Email / SMTP (optional)
+### Email (optional)
+
+Two ways to configure delivery. Postmark is checked first; if no Postmark token is
+set, the generic SMTP block is used. With neither configured, email is disabled and
+all sends become no-ops — in-app, Slack, and Teams notifications still fire.
+
+**Option 1 — Postmark**
+
+| Variable | Description |
+|---|---|
+| `POSTMARK_SERVER_TOKEN` | Server API Token (Postmark → Servers → your server → API Tokens). Used as both SMTP username and password. |
+| `POSTMARK_MESSAGE_STREAM` | Message stream to route through. Default: `outbound` (the transactional stream every server ships with). |
+| `EMAIL_FROM` | Sender address. **Must be a confirmed Sender Signature or on a verified domain** — Postmark rejects anything else. |
+| `ALERT_EMAIL_TO` | Comma-separated list of recipients for renewal alert emails |
+
+Before sending, verify your domain in Postmark (Sender Signatures → Domains) and add
+the DKIM and Return-Path DNS records it gives you.
+
+**Option 2 — generic SMTP**
 
 | Variable | Description |
 |---|---|
@@ -128,10 +164,12 @@ ClauseFlow supports three AI backends. Set `AI_PROVIDER` to select one, or leave
 | `SMTP_SECURE` | `true` for TLS (port 465), `false` for STARTTLS (port 587) |
 | `SMTP_USER` | SMTP username |
 | `SMTP_PASS` | SMTP password |
-| `SMTP_FROM` | Sender address (e.g. `noreply@yourcompany.com`) |
+| `EMAIL_FROM` | Sender address (e.g. `noreply@yourcompany.com`) |
 | `ALERT_EMAIL_TO` | Comma-separated list of recipients for renewal alert emails |
 
-Works with any SMTP provider: Gmail, SendGrid, Postmark, AWS SES, Mailgun, etc.
+Works with any SMTP provider: Gmail, SendGrid, AWS SES, Mailgun, etc.
+
+> `SMTP_FROM` is still accepted as an alias for `EMAIL_FROM`.
 
 ### E-Signature (DocuSeal)
 
@@ -323,4 +361,4 @@ Check that MinIO (or your S3 bucket) is reachable and the bucket exists. The `cr
 
 ### Emails not sending
 
-Verify your SMTP credentials and that `SMTP_HOST` is set. Check the worker logs for `[email]` prefixed errors.
+Verify your credentials and that either `POSTMARK_SERVER_TOKEN` or `SMTP_HOST` is set. The worker logs a warning at startup when email is unconfigured; check the worker logs for `[email]` prefixed errors.

@@ -90,9 +90,9 @@ else
   DOMAIN="${DOMAIN:-app.clauseflow.com}"
 
   # Email
-  read -rp "$(echo -e "${BOLD}Resend API key${NC} (get free at resend.com): ")" RESEND_API_KEY
-  read -rp "$(echo -e "${BOLD}From email address${NC} (e.g. noreply@${DOMAIN}): ")" SMTP_FROM
-  SMTP_FROM="${SMTP_FROM:-noreply@${DOMAIN}}"
+  read -rp "$(echo -e "${BOLD}Postmark server token${NC} (Postmark → Servers → API Tokens): ")" POSTMARK_SERVER_TOKEN
+  read -rp "$(echo -e "${BOLD}From email address${NC} (e.g. noreply@${DOMAIN}): ")" EMAIL_FROM
+  EMAIL_FROM="${EMAIL_FROM:-noreply@${DOMAIN}}"
 
   read -rp "$(echo -e "${BOLD}Your email address${NC} (for renewal alerts): ")" ALERT_EMAIL_TO
 
@@ -126,9 +126,10 @@ BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
 # Notifications
 NOTIFICATION_ENCRYPTION_KEY=${NOTIFICATION_ENCRYPTION_KEY}
 
-# Email (Resend)
-RESEND_API_KEY=${RESEND_API_KEY}
-SMTP_FROM=${SMTP_FROM}
+# Email (Postmark) — the From address must be on a domain verified in Postmark
+POSTMARK_SERVER_TOKEN=${POSTMARK_SERVER_TOKEN}
+POSTMARK_MESSAGE_STREAM=outbound
+EMAIL_FROM=${EMAIL_FROM}
 ALERT_EMAIL_TO=${ALERT_EMAIL_TO}
 
 # DocuSeal
