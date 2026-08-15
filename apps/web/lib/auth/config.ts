@@ -3,6 +3,7 @@ import { organization } from "better-auth/plugins"
 import { prismaAdapter } from "better-auth/adapters/prisma"
 import { prisma } from "@/lib/db/client"
 import { entraSso } from "@/lib/auth/entra-sso"
+import { resolveDefaultOrganizationId } from "@/lib/auth/active-org"
 import { sendInvitationEmail } from "@/lib/email/invitation"
 import { isEmailConfigured, sendEmail } from "@/lib/email/transport"
 import { logger } from "@/lib/logger"
@@ -67,6 +68,38 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24,       // refresh if 1 day old
+  },
+  databaseHooks: {
+    session: {
+      create: {
+        /**
+         * Stamp the active organization onto every new session.
+         *
+         * Without this, only sessions created through setActive() (org
+         * creation, invitation accept) carried one — so an existing member who
+         * simply logged out and back in landed on the "No organization yet"
+         * screen, because the client reads Session.activeOrganizationId and has
+         * no equivalent of resolveAuth()'s server-side fallback.
+         */
+        async before(session) {
+          // Already chosen by the caller — the Entra sign-in path passes the
+          // org it resolved from the tenant, which must win over "oldest
+          // membership" for anyone who belongs to more than one org.
+          if (session.activeOrganizationId) return
+
+          try {
+            const organizationId = await resolveDefaultOrganizationId(prisma, session.userId)
+            if (!organizationId) return // no memberships yet — the holding screen is correct
+            return { data: { ...session, activeOrganizationId: organizationId } }
+          } catch (err) {
+            // Never block sign-in over this; the server-side fallback in
+            // resolveAuth() still resolves the org for API calls.
+            logger.error({ err, userId: session.userId }, "[auth] could not resolve active org")
+            return
+          }
+        },
+      },
+    },
   },
   trustedOrigins: Array.from(new Set([authOrigin, publicAppOrigin, ...devOrigins])),
 })
