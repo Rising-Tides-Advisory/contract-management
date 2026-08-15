@@ -33,7 +33,8 @@
       "account": "Account",
       "language": "Language"
     },
-    "renewals": "Renewals"
+    "renewals": "Renewals",
+    "entra": "Microsoft Entra ID"
   },
   "common": {
     "save": "Save",
@@ -164,7 +165,12 @@
     "creating": "Creating...",
     "createOrg": "Create organization",
     "orgSlug": "Slug: {slug}",
-    "createOrgFailed": "Failed to create organization"
+    "createOrgFailed": "Failed to create organization",
+    "continueWithMicrosoft": "Continue with Microsoft",
+    "orContinueWith": "or",
+    "microsoftEmailPrompt": "Enter your work email to continue with Microsoft",
+    "microsoftNotConfigured": "Microsoft sign-in isn't set up for that email domain",
+    "microsoftRedirecting": "Redirecting to Microsoft..."
   },
   "settings": {
     "title": "Settings",

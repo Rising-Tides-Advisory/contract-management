@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import Link from "next/link"
 import {
@@ -17,7 +17,7 @@ import {
   ChevronDown,
   RefreshCw,
 } from "lucide-react"
-import { useSession, useActiveOrganization, signOut } from "@/lib/auth/client"
+import { useSession, useActiveOrganization, signOut, organization } from "@/lib/auth/client"
 import { usePostHog } from "posthog-js/react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { CmdK } from "@/components/cmd-k"
@@ -269,6 +269,35 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [isPending, session, router])
 
+  // Self-heal a session that has no active organization.
+  //
+  // Sessions created before the databaseHooks fix (see lib/auth/config.ts) have
+  // a null activeOrganizationId even when the user belongs to an org, which
+  // strands them on the "No organization yet" screen. Rather than making them
+  // sign out again, adopt their first membership the same way the server-side
+  // fallback in resolveAuth() does. Guarded by a ref so a user who genuinely
+  // has no memberships does not retry on every render.
+  const recoveryAttempted = useRef(false)
+  const [recovering, setRecovering] = useState(false)
+  useEffect(() => {
+    if (orgPending || activeOrg || !session?.user || recoveryAttempted.current) return
+    recoveryAttempted.current = true
+    setRecovering(true)
+    organization
+      .list()
+      .then((res) => {
+        const first = res?.data?.[0]
+        if (!first) return
+        return organization.setActive({ organizationId: first.id }).then(() => {
+          // useActiveOrganization does not observe setActive's write, so reload
+          // to pick up the refreshed session cookie.
+          window.location.reload()
+        })
+      })
+      .catch(() => {})
+      .finally(() => setRecovering(false))
+  }, [orgPending, activeOrg, session?.user])
+
   // Identify authenticated user in PostHog so events are tied to real people.
   //
   // Keyed on the ids only, deliberately. `session.user` is a fresh object on
@@ -286,7 +315,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id, activeOrg?.id, ph])
 
-  if (isPending || orgPending) {
+  if (isPending || orgPending || recovering) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="space-y-3 w-64">

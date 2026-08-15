@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Webhook,
   Key,
+  ShieldCheck,
 } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -44,6 +45,7 @@ type Category =
   | "Cloud Storage"
   | "Communication"
   | "Accounting"
+  | "Identity"
   | "Developer"
 
 const CATEGORIES: Category[] = [
@@ -52,6 +54,7 @@ const CATEGORIES: Category[] = [
   "Cloud Storage",
   "Communication",
   "Accounting",
+  "Identity",
   "Developer",
 ]
 
@@ -296,6 +299,51 @@ function AccountingSection() {
         logo="XR"
         name="Xero"
         description="Connect contract financials to your Xero accounting."
+      />
+    </div>
+  )
+}
+
+// ─── Identity Section ─────────────────────────────────────────────────────
+
+function IdentitySection({ connected }: { connected: boolean | null }) {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-[var(--radius)] border border-border bg-card p-4 flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <ShieldCheck className="h-4 w-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <h3 className="text-sm font-semibold">Microsoft Entra ID</h3>
+            {connected === null ? null : connected ? (
+              <ConnectedBadge />
+            ) : (
+              <StatusBadge label="Not connected" variant="muted" />
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mb-2">
+            Sign in with Microsoft, and use your tenant directory to route contract
+            notifications to whoever is responsible.
+          </p>
+          <Link
+            href="/settings/entra"
+            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:opacity-80 transition-opacity"
+          >
+            {connected ? "Manage Entra ID" : "Set up Entra ID"}
+            <ExternalLink className="h-3 w-3" />
+          </Link>
+        </div>
+      </div>
+      <SoonCard
+        logo="OK"
+        name="Okta"
+        description="SAML and SCIM provisioning for Okta-managed workforces."
+      />
+      <SoonCard
+        logo="GW"
+        name="Google Workspace"
+        description="Sign in with Google and sync your Workspace directory."
       />
     </div>
   )
@@ -565,6 +613,9 @@ export default function IntegrationsPage() {
   const [activeCategory, setActiveCategory] = useState<Category>("CRM")
   const [slackCount, setSlackCount] = useState(0)
   const [teamsCount, setTeamsCount] = useState(0)
+  // null until known — non-admins get a 403 here and simply see no badge,
+  // since the Entra card links to a page they cannot open anyway.
+  const [entraConnected, setEntraConnected] = useState<boolean | null>(null)
 
   async function fetchStatus(signal?: AbortSignal) {
     try {
@@ -604,6 +655,18 @@ export default function IntegrationsPage() {
         const channels: { channelType: string }[] = data.channels ?? []
         setSlackCount(channels.filter((c) => c.channelType === "slack").length)
         setTeamsCount(channels.filter((c) => c.channelType === "teams").length)
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetch("/api/entra", { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return
+        setEntraConnected(!!data.integration?.consentGrantedAt)
       })
       .catch(() => {})
     return () => controller.abort()
@@ -729,6 +792,7 @@ export default function IntegrationsPage() {
           <CommunicationSection slackCount={slackCount} teamsCount={teamsCount} />
         )}
         {activeCategory === "Accounting" && <AccountingSection />}
+        {activeCategory === "Identity" && <IdentitySection connected={entraConnected} />}
         {activeCategory === "Developer" && <DeveloperSection />}
       </div>
 

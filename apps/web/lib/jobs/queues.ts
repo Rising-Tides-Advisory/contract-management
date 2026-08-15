@@ -32,6 +32,15 @@ export interface SalesforcePollJobData {
   triggeredAt: string
 }
 
+/**
+ * Entra directory sync. With no organizationId the job fans out over every
+ * connected org (the daily cron); with one it syncs just that org.
+ */
+export interface EntraSyncJobData {
+  triggeredAt: string
+  organizationId?: string
+}
+
 // ─── M10: Import processing ──────────────────────────────────────────────────
 
 export interface ImportProcessJobData {
@@ -161,6 +170,7 @@ let _obligationsCheckQueue: Queue<ObligationsCheckJobData> | null = null
 let _salesforcePollQueue: Queue<SalesforcePollJobData> | null = null
 let _importProcessQueue: Queue<ImportProcessJobData> | null = null
 let _obligationExtractQueue: Queue<ObligationExtractJobData> | null = null
+let _entraSyncQueue: Queue<EntraSyncJobData> | null = null
 
 export function getContractExtractQueue(): Queue<ContractExtractJobData> {
   return (_contractExtractQueue ??= new Queue<ContractExtractJobData>("contract.extract", { connection }))
@@ -256,6 +266,13 @@ export function getObligationExtractQueue(): Queue<ObligationExtractJobData> {
   ))
 }
 
+export function getEntraSyncQueue(): Queue<EntraSyncJobData> {
+  return (_entraSyncQueue ??= new Queue<EntraSyncJobData>("entra.sync_directory", {
+    connection,
+    defaultJobOptions: { removeOnComplete: 50, removeOnFail: 200 },
+  }))
+}
+
 export function getImportProcessQueue(): Queue<ImportProcessJobData> {
   // attempts: 1 — partial progress is persisted per ImportRow as the worker
   // streams through the file. A retry would re-process completed rows; instead
@@ -328,6 +345,10 @@ export const importProcessQueue = {
   add: (...a: Parameters<Queue<ImportProcessJobData>["add"]>) =>
     getImportProcessQueue().add(...a),
   close: () => _importProcessQueue?.close() ?? Promise.resolve(),
+}
+export const entraSyncQueue = {
+  add: (...a: Parameters<Queue<EntraSyncJobData>["add"]>) => getEntraSyncQueue().add(...a),
+  close: () => _entraSyncQueue?.close() ?? Promise.resolve(),
 }
 export const obligationExtractQueue = {
   add: (...a: Parameters<Queue<ObligationExtractJobData>["add"]>) =>

@@ -33,7 +33,8 @@
       "account": "الحساب",
       "language": "اللغة"
     },
-    "renewals": "التجديدات"
+    "renewals": "التجديدات",
+    "entra": "Microsoft Entra ID"
   },
   "common": {
     "save": "حفظ",
@@ -164,7 +165,12 @@
     "creating": "جارٍ الإنشاء...",
     "createOrg": "إنشاء المؤسسة",
     "orgSlug": "المعرف: {slug}",
-    "createOrgFailed": "فشل إنشاء المؤسسة"
+    "createOrgFailed": "فشل إنشاء المؤسسة",
+    "continueWithMicrosoft": "المتابعة باستخدام Microsoft",
+    "orContinueWith": "أو",
+    "microsoftEmailPrompt": "أدخل بريدك الإلكتروني المؤسسي للمتابعة باستخدام Microsoft",
+    "microsoftNotConfigured": "تسجيل الدخول عبر Microsoft غير مُعدّ لنطاق البريد الإلكتروني هذا",
+    "microsoftRedirecting": "جارٍ إعادة التوجيه إلى Microsoft..."
   },
   "settings": {
     "title": "الإعدادات",
