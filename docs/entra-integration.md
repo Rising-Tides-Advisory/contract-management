@@ -151,8 +151,10 @@ worker process is running — or the running one was built before this queue
 existed — the job is accepted and never processed, and the page will keep
 reporting "Last sync: Never". `POST /api/entra/sync` returns 503 when it can
 detect that no worker is attached. See
-[deploy-vercel.md](./deploy-vercel.md#why-the-worker-needs-a-separate-host);
-the worker has to be redeployed by hand after any change to it.
+[deploy-vercel.md](./deploy-vercel.md#6-the-worker-host) for how to run one —
+and note that a host without deploy-on-push leaves the worker behind the app
+every time worker code changes, which is how a queue ends up inert in
+production while the code enqueueing to it is already live.
 
 People who disappear from the directory are marked disabled rather than deleted.
 Deleting them would clear `Contract.responsiblePartyId` and erase who was accountable —
