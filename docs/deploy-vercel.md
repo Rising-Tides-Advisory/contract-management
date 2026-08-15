@@ -83,11 +83,34 @@ pooling. Long-lived processes (the worker, Docker, local dev) default to 20.
 
 ### Migrations
 
-Vercel does not run migrations. Run them from your machine or from CI:
+Production builds apply pending migrations automatically. `apps/web/scripts/build-migrate.mjs`
+runs `prisma migrate deploy` before `next build`, so a deploy never ships code
+expecting a table the database does not have.
+
+It only runs when **all** of these hold, and logs which guard stopped it otherwise:
+
+| Condition | Why |
+|---|---|
+| `SKIP_BUILD_MIGRATE` unset | Escape hatch — set it in Vercel to disable without a code change |
+| Running on Vercel | A local `pnpm build` must never migrate a remote database |
+| `VERCEL_ENV === "production"` | Preview shares one database with production here, so migrating on preview would migrate production |
+
+A missing direct URL or a failed migration **fails the build** — deploying against
+an un-migrated schema is worse than not deploying.
+
+> If the build fails with "No direct database URL available at build time" while
+> the variables are set on the project, the likely cause is that they are marked
+> **Sensitive** in Vercel. Either unmark the direct-connection variable, or set
+> `SKIP_BUILD_MIGRATE=1` and migrate manually.
+
+To run them by hand — always the direct/unpooled URL, never the pooled one:
 
 ```bash
-DIRECT_URL='postgresql://...:5432/postgres' pnpm --filter web db:migrate:prod
+DIRECT_URL='postgresql://...' pnpm --filter web db:migrate:prod
 ```
+
+Once previews get their own Neon database branch, drop the `VERCEL_ENV` guard so
+preview deploys migrate their own branch.
 
 ---
 
