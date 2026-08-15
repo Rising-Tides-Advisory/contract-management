@@ -62,13 +62,17 @@ Wait 1–2 minutes for DNS to propagate. Verify with: `nslookup app.yourdomain.c
 
 ---
 
-## Step 4 — Create a Resend account (5 min)
+## Step 4 — Create a Postmark account (5 min)
 
-Resend sends your transactional emails (invites, alerts, etc.). Free tier: 100 emails/day.
+Postmark sends your transactional emails (invites, alerts, etc.). Free tier: 100 emails/month.
 
-1. Go to **https://resend.com** → Sign up
-2. Go to **Domains** → Add your domain → follow the DNS instructions
-3. Go to **API Keys** → Create API Key → copy it (starts with `re_...`)
+1. Go to **https://postmarkapp.com** → Sign up
+2. Go to **Sender Signatures → Domains** → Add your domain → publish the DKIM and
+   Return-Path DNS records it gives you
+3. Go to **Servers → your server → API Tokens** → copy the **Server API Token**
+
+Your From address must be on the verified domain — Postmark rejects mail from an
+unverified sender.
 
 ---
 
@@ -105,7 +109,7 @@ bash scripts/deploy.sh
 
 The script will:
 - Install Docker automatically
-- Ask you 4 questions (domain, Resend key, from email, your email)
+- Ask you 4 questions (domain, Postmark server token, from email, your email)
 - Auto-generate all passwords and secrets
 - Build Docker images (~5 min first time)
 - Start all services
@@ -193,7 +197,7 @@ scp -i ~/Downloads/ssh-key-*.key ubuntu@YOUR_VM_IP:/var/lib/docker/volumes/claus
 | Oracle Cloud ARM VM (4 CPU, 24 GB) | **$0/month (Always Free)** |
 | Oracle Cloud block storage (50 GB) | **$0/month (Always Free)** |
 | Cloudflare (DNS + proxy) | **$0/month** |
-| Resend (100 emails/day) | **$0/month** |
+| Postmark (100 emails/month) | **$0/month** |
 | Domain name | ~$10/year |
 | **Total** | **~$0.83/month** |
 
