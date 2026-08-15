@@ -405,6 +405,45 @@ describe("POST /api/contracts/extract-preview", () => {
 
     if (saved !== undefined) process.env.OPENAI_API_KEY = saved
   })
+
+  // The upload wizard shows this text beside the fields it pre-filled, and it
+  // is the only thing a DOCX has to display — no browser renders one.
+  it("returns the extracted document text even when AI is unavailable", async () => {
+    const saved = process.env.OPENAI_API_KEY
+    delete process.env.OPENAI_API_KEY
+
+    vi.mocked(resolveAuth).mockResolvedValueOnce(adminCtx)
+    const { POST } = await import("@/app/api/contracts/extract-preview/route")
+    const pdfBytes = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34])
+    const fd = new FormData()
+    fd.append("file", new File([pdfBytes], "test.pdf", { type: "application/pdf" }))
+    const res = await POST(makeFormRequest("http://localhost/api/contracts/extract-preview", fd))
+    const body = await res.json()
+    expect(body.documentText).toBe("Extracted PDF text")
+    expect(body.documentTextTruncated).toBe(false)
+
+    if (saved !== undefined) process.env.OPENAI_API_KEY = saved
+  })
+
+  it("flags document text that hit the extractor's character cap", async () => {
+    const saved = process.env.OPENAI_API_KEY
+    delete process.env.OPENAI_API_KEY
+
+    const pdfParse = (await import("pdf-parse")).default
+    vi.mocked(pdfParse).mockResolvedValueOnce({ text: "x".repeat(9000) } as never)
+
+    vi.mocked(resolveAuth).mockResolvedValueOnce(adminCtx)
+    const { POST } = await import("@/app/api/contracts/extract-preview/route")
+    const pdfBytes = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34])
+    const fd = new FormData()
+    fd.append("file", new File([pdfBytes], "test.pdf", { type: "application/pdf" }))
+    const res = await POST(makeFormRequest("http://localhost/api/contracts/extract-preview", fd))
+    const body = await res.json()
+    expect(body.documentText).toHaveLength(8000)
+    expect(body.documentTextTruncated).toBe(true)
+
+    if (saved !== undefined) process.env.OPENAI_API_KEY = saved
+  })
 })
 
 // ─── POST /api/org/invitations/[id] (resend) ──────────────────────────────────
