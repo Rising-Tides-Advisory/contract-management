@@ -228,6 +228,53 @@ The worker host needs the same values, minus the `NEXT_PUBLIC_*` and auth URL en
 
 ---
 
+## 6. The worker host
+
+The worker is one long-lived process built from `apps/web/Dockerfile.worker`. It
+listens on no ports and serves no traffic — it polls Redis, runs jobs, and holds the
+five repeating crons (renewal alerts, obligation checks, signing sync, Salesforce
+poll, Entra directory sync). Any host that keeps a container running works; nothing
+below is Fly-specific beyond the CLI.
+
+Give it `DATABASE_URL`, `DIRECT_URL`, `REDIS_URL`, `NOTIFICATION_ENCRYPTION_KEY`,
+`ENCRYPTION_KEY`, the storage credentials, and — if you want mail — the Postmark or
+SMTP block. It does not need `NEXT_PUBLIC_APP_URL`, `BETTER_AUTH_URL`, or
+`INTERNAL_APP_URL`. `DATABASE_POOL_SIZE` should be left unset: the worker is a
+long-lived process and wants the default of 20, not the 1 that suits Vercel.
+
+**Fly** — `fly.toml` already points at the worker Dockerfile:
+
+```bash
+fly launch --no-deploy -c fly.toml     # first time only
+fly secrets set DATABASE_URL=... REDIS_URL=... NOTIFICATION_ENCRYPTION_KEY=...
+fly deploy -c fly.toml
+```
+
+**Railway / Render** — create a service from this repo, set the Dockerfile path to
+`apps/web/Dockerfile.worker` and the build context to the repo root, add the same
+env vars, and disable any HTTP health check: the worker never opens a port, so a
+port-based check will restart it forever.
+
+**Any VM with Docker** —
+
+```bash
+docker build -f apps/web/Dockerfile.worker -t clauseflow-worker .
+docker run -d --restart=always --env-file worker.env clauseflow-worker
+```
+
+Confirm it came up by looking for the cron registrations in the logs:
+
+```
+[alerts] Daily cron registered (0 9 * * *)
+[obligations] Daily cron registered (0 9 * * *)
+[entra.sync] Daily cron registered (0 4 * * *)
+```
+
+If those lines are absent the process is not booting; if they are present but jobs
+never complete, it cannot reach Redis or Postgres.
+
+---
+
 ## Verifying the deployment
 
 1. Register an account — proves `DATABASE_URL` and `BETTER_AUTH_SECRET` work.
