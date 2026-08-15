@@ -1,6 +1,6 @@
 import { ContractAlert, Contract, Organization } from "@prisma/client"
 import { prisma } from "@/lib/db/client"
-import { isEmailConfigured, sendEmail } from "@/lib/email/transport"
+import { sendEmail } from "@/lib/email/transport"
 
 export type ContractAlertWithContract = ContractAlert & {
   contract: Contract & { organization: Organization }
@@ -100,16 +100,18 @@ async function resolveAlertRecipients(alert: ContractAlertWithContract): Promise
 }
 
 export async function sendAlertEmail(alert: ContractAlertWithContract): Promise<void> {
-  // Silently skip if email delivery is not configured
-  if (!isEmailConfigured()) return
-
   const to = await resolveAlertRecipients(alert)
   if (to.length === 0) return
 
   const label = ALERT_LABELS[alert.alertType] ?? alert.alertType
   const subject = `[Aakd] ${label} — ${alert.contract.title}`
 
-  await sendEmail({ to, subject, html: buildAlertHtml(alert) })
+  await sendEmail({
+    organizationId: alert.contract.organizationId,
+    to,
+    subject,
+    html: buildAlertHtml(alert),
+  })
 
   // Stamp emailSentAt so we can audit which alerts triggered an email
   await prisma.contractAlert.update({

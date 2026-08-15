@@ -1,6 +1,8 @@
-import { isEmailConfigured, sendEmail } from "@/lib/email/transport"
+import { sendEmail } from "@/lib/email/transport"
 
 interface InvitationEmailParams {
+  /** Sends through this org's Postmark config when it has one. */
+  organizationId?: string
   to: string
   organizationName: string
   inviterName: string
@@ -37,9 +39,8 @@ function buildInvitationHtml(params: InvitationEmailParams): string {
 }
 
 export async function sendInvitationEmail(params: InvitationEmailParams): Promise<void> {
-  if (!isEmailConfigured()) return
-
   await sendEmail({
+    organizationId: params.organizationId,
     to: params.to,
     subject: `You've been invited to ${params.organizationName} on Aakd`,
     html: buildInvitationHtml(params),

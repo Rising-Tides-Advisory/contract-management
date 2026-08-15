@@ -1070,6 +1070,7 @@ const emailWorker = new Worker<EmailJobData>(
       }
       if (data.kind === "approval_request") {
         await sendApprovalRequestEmail({
+          organizationId: data.organizationId,
           to: data.to,
           assigneeName: data.assigneeName,
           requesterName: data.requesterName,
@@ -1080,6 +1081,7 @@ const emailWorker = new Worker<EmailJobData>(
       }
       if (data.kind === "approval_rejected") {
         await sendApprovalRejectionEmail({
+          organizationId: data.organizationId,
           to: data.to,
           requesterName: data.requesterName,
           reviewerName: data.reviewerName,
@@ -1093,9 +1095,10 @@ const emailWorker = new Worker<EmailJobData>(
         // (the fanout job already loaded the full contract context).
         const contract = await getWorkerPrisma().contract.findUnique({
           where: { id: data.contractId },
-          select: { organization: { select: { name: true } } },
+          select: { organizationId: true, organization: { select: { name: true } } },
         })
         await sendEventNotificationEmail({
+          organizationId: contract?.organizationId,
           to: data.to,
           eventName: data.eventName,
           contractId: data.contractId,
@@ -2274,8 +2277,9 @@ const _provider = process.env.AI_PROVIDER?.toLowerCase() || (
 logger.info({ provider: _provider }, "[worker] AI provider")
 if (!isEmailConfigured()) {
   logger.warn(
-    "[worker] Email is not configured — reminder and alert emails will be silently skipped. " +
-    "In-app notifications and Slack/Teams will still fire. " +
-    "Set POSTMARK_SERVER_TOKEN (or SMTP_HOST + SMTP_USER/SMTP_PASS) to enable email delivery.",
+    "[worker] No server-level email config — mail for orgs without their own " +
+    "Postmark settings will be silently skipped, as will password resets. " +
+    "Orgs that configured Postmark in settings are unaffected. " +
+    "Set POSTMARK_SERVER_TOKEN (or SMTP_HOST + SMTP_USER/SMTP_PASS) for the fallback.",
   )
 }

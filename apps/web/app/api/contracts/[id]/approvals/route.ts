@@ -209,6 +209,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       fireAndLog(
         emailQueue.add("send", {
           kind: "approval_request",
+          organizationId: ctx.organizationId,
           to: assigneeMember.user.email,
           assigneeName: assigneeMember.user.name,
           requesterName: requesterUser?.name ?? "A team member",

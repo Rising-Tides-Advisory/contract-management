@@ -231,6 +231,7 @@ export async function PATCH(
       fireAndLog(
         emailQueue.add("send", {
           kind: "approval_rejected",
+          organizationId: ctx.organizationId,
           to: updated.requestedBy.email,
           requesterName: updated.requestedBy.name,
           reviewerName: updated.assignedTo.name,
@@ -261,6 +262,7 @@ export async function PATCH(
         fireAndLog(
           emailQueue.add("send", {
             kind: "approval_request",
+          organizationId: ctx.organizationId,
             to: nextAssignee.email,
             assigneeName: nextAssignee.name,
             requesterName: nextRequesterName,

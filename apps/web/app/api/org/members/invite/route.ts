@@ -126,6 +126,7 @@ export async function POST(req: Request) {
   // Non-critical side-effect — email failure must not abort the invitation
   fireAndLog(
     sendInvitationEmail({
+      organizationId: ctx.organizationId,
       to: parsed.data.email,
       organizationName: orgName,
       inviterName,

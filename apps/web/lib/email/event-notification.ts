@@ -1,10 +1,12 @@
-import { isEmailConfigured, sendEmail } from "@/lib/email/transport"
+import { sendEmail } from "@/lib/email/transport"
 import {
   HUMAN_EVENT_LABELS,
   type NotificationEventName,
 } from "@/lib/notifications/fanout"
 
 export interface EventNotificationEmailParams {
+  /** Sends through this org's Postmark config when it has one. */
+  organizationId?: string
   to: string
   eventName: string
   contractId: string
@@ -125,7 +127,6 @@ function buildEventHtml(params: EventNotificationEmailParams, appUrl: string): s
 export async function sendEventNotificationEmail(
   params: EventNotificationEmailParams,
 ): Promise<void> {
-  if (!isEmailConfigured()) return
 
   const appUrl =
     process.env.NEXT_PUBLIC_APP_URL ??
@@ -135,5 +136,10 @@ export async function sendEventNotificationEmail(
   const label = eventLabel(params.eventName)
   const subject = `[Aakd] ${label} — ${params.contractTitle}`
 
-  await sendEmail({ to: params.to, subject, html: buildEventHtml(params, appUrl) })
+  await sendEmail({
+    organizationId: params.organizationId,
+    to: params.to,
+    subject,
+    html: buildEventHtml(params, appUrl),
+  })
 }
