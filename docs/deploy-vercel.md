@@ -129,11 +129,14 @@ The `rediss://` scheme enables TLS automatically in both the app and the worker.
 
 ## 5. Vercel project settings
 
-- **Root directory:** repository root (the build script filters to the `web` workspace).
-- **Build command:** default (`pnpm run build`). It runs `prisma generate` before
-  `next build`. This is not optional: pnpm 10 blocks dependency build scripts by
-  default, so Prisma's postinstall never fires and without an explicit generate step
-  the build fails with `implicitly has an 'any' type` errors from ungenerated client types.
+- **Root directory:** `apps/web`. Vercel detects the pnpm workspace and installs from
+  the repo root, then builds in that directory. Leaving it at the repository root also
+  works — the root `build` script filters to the `web` workspace either way.
+- **Build command:** default (`pnpm run build`). Either root directory resolves to the
+  `web` workspace's build script, which runs `prisma generate` before `next build`.
+  That generate step is not optional: pnpm 10 blocks dependency build scripts by
+  default, so Prisma's postinstall never fires, and without it the build fails with
+  `implicitly has an 'any' type` errors from ungenerated client types.
 
 ### Environment variables
 
