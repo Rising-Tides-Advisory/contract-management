@@ -74,6 +74,32 @@ const CALLBACK_ERRORS: Record<string, string> = {
   access_denied: "Consent was cancelled.",
 }
 
+/**
+ * Why "Continue with Microsoft" is or isn't live.
+ *
+ * Home-realm discovery matches a sign-in address against integrations that are
+ * enabled, consented, bound to a tenant, and carry the domain. When any one of
+ * those is missing the login page can only say "not set up for that domain",
+ * which is useless to the admin looking at this page — so name the missing
+ * piece here instead.
+ */
+function signInReadiness(i: Integration | null): { live: boolean; detail: string } {
+  if (!i) return { live: false, detail: "Save your app registration credentials to begin." }
+  if (!i.consentGrantedAt || !i.tenantId) {
+    return { live: false, detail: "Admin consent hasn't been granted yet — complete step 2." }
+  }
+  if (!i.ssoEnabled) {
+    return { live: false, detail: "Microsoft sign-in is turned off in the settings below." }
+  }
+  if (i.emailDomains.length === 0) {
+    return { live: false, detail: "No email domains are configured, so no address can route here." }
+  }
+  return {
+    live: true,
+    detail: `Anyone with an address at ${i.emailDomains.join(", ")} can sign in with Microsoft.`,
+  }
+}
+
 function CopyField({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false)
   return (
@@ -328,6 +354,31 @@ function EntraSettings() {
           </span>
         )}
       </header>
+
+      {(() => {
+        const { live, detail } = signInReadiness(integration)
+        return (
+          <div
+            className={
+              live
+                ? "flex items-start gap-2 rounded-[var(--radius)] border border-success/30 bg-success/10 p-3 text-xs text-success"
+                : "flex items-start gap-2 rounded-[var(--radius)] border border-border bg-muted/50 p-3 text-xs text-muted-foreground"
+            }
+          >
+            {live ? (
+              <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            )}
+            <span>
+              <span className="font-medium">
+                {live ? "Microsoft sign-in is live." : "Microsoft sign-in is not live yet."}
+              </span>{" "}
+              {detail}
+            </span>
+          </div>
+        )
+      })()}
 
       {/* ── Step 1: app registration ─────────────────────────────────────── */}
       <section className="rounded-[var(--radius)] border border-border bg-card p-5">
