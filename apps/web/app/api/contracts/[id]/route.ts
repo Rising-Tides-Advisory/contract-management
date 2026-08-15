@@ -46,6 +46,9 @@ const UpdateContractSchema = z.object({
   notes: z.string().max(10000).nullable().optional(),
   folderId: z.string().nullable().optional(),
   tagIds: z.array(z.string()).optional(),
+  // Entra directory user accountable for this contract. Null clears it and
+  // hands the notification path back to the owner.
+  responsiblePartyId: z.string().nullable().optional(),
 })
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
@@ -80,6 +83,17 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         createdAt: true,
         updatedAt: true,
         owner: { select: { id: true, name: true, email: true, image: true } },
+        responsibleParty: {
+          select: {
+            id: true,
+            displayName: true,
+            mail: true,
+            userPrincipalName: true,
+            jobTitle: true,
+            department: true,
+            accountEnabled: true,
+          },
+        },
         tags: true,
         folder: true,
         files: {
@@ -156,7 +170,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (!existing) return new Response("Not Found", { status: 404 })
 
     // Validate status transition
-    const { tagIds, folderId, startDate, endDate, renewalDate, status, ...rest } = parsed.data
+    const { tagIds, folderId, startDate, endDate, renewalDate, status, responsiblePartyId, ...rest } =
+      parsed.data
 
     // Strip any HTML tags from free-text fields to prevent XSS persistence
     const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "")
@@ -206,6 +221,21 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         return Response.json({ error: "One or more tags not found in this organization" }, { status: 400 })
       }
     }
+    // The directory is org-scoped by the Prisma extension, but check anyway so
+    // an id from another org reads as "not found" rather than silently writing
+    // a cross-org FK.
+    if (responsiblePartyId) {
+      const directoryUser = await prisma.entraDirectoryUser.findFirst({
+        where: { id: responsiblePartyId, organizationId: ctx.organizationId },
+        select: { id: true },
+      })
+      if (!directoryUser) {
+        return Response.json(
+          { error: "Responsible party not found in this organization's directory" },
+          { status: 400 },
+        )
+      }
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let updated: any
@@ -216,6 +246,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           ...rest,
           status: status ?? undefined,
           folderId: folderId === undefined ? undefined : folderId,
+          responsiblePartyId:
+            responsiblePartyId === undefined ? undefined : responsiblePartyId,
           startDate: startDate === undefined ? undefined : startDate ? new Date(startDate) : null,
           endDate: endDate === undefined ? undefined : endDate ? new Date(endDate) : null,
           renewalDate: renewalDate === undefined ? undefined : renewalDate ? new Date(renewalDate) : null,
@@ -223,6 +255,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         },
         include: {
           owner: { select: { id: true, name: true, email: true, image: true } },
+          responsibleParty: {
+            select: {
+              id: true,
+              displayName: true,
+              mail: true,
+              userPrincipalName: true,
+              jobTitle: true,
+              department: true,
+              accountEnabled: true,
+            },
+          },
           tags: true,
           folder: true,
         },

@@ -47,6 +47,9 @@ model User {
   commentsResolved            ContractComment[]            @relation("CommentResolver")
   snapshotsCreated            DocumentSnapshot[]           @relation("SnapshotCreator")
   createdSnippets             ClauseSnippet[]              @relation("SnippetCreatedBy")
+  entraConnected              EntraIntegration[]           @relation("EntraConnectedBy")
+  entraConsentGranted         EntraIntegration[]           @relation("EntraConsentGrantedBy")
+  entraDirectoryLinks         EntraDirectoryUser[]         @relation("EntraDirectoryLink")
 }
 
 model Session {
@@ -115,6 +118,8 @@ model Organization {
   aiConfig                OrgAiConfig?
   emailConfig             OrgEmailConfig?
   clauseSnippets          ClauseSnippet[]
+  entraIntegration        EntraIntegration?
+  entraDirectoryUsers     EntraDirectoryUser[]
 }
 
 model Member {
@@ -168,6 +173,12 @@ model Contract {
   status               ContractStatus       @default(DRAFT)
   ownerId              String
   owner                User                 @relation("ContractOwner", fields: [ownerId], references: [id])
+  // Optional Entra directory user who is accountable for this contract. Takes
+  // precedence over `owner` when resolving the notification path. May be
+  // someone who has no ClauseFlow account at all — they are still notified at
+  // their directory mail address.
+  responsiblePartyId   String?
+  responsibleParty     EntraDirectoryUser?  @relation("ContractResponsibleParty", fields: [responsiblePartyId], references: [id], onDelete: SetNull)
   counterpartyName     String?
   counterpartyContact  String?
   value                Float?
@@ -214,6 +225,7 @@ model Contract {
   @@index([organizationId, autoRenewal, endDate])
   @@index([organizationId, riskScore])
   @@index([organizationId, isOcrExtracted])
+  @@index([responsiblePartyId])
 }
 
 model ContractSigner {
@@ -834,4 +846,97 @@ model ClauseSnippet {
 
   @@index([organizationId])
   @@map("clause_snippets")
+}
+
+// ─── Microsoft Entra ID (per-organization) ────────────────────────────────────
+// One Entra tenant per ClauseFlow organization. The org registers its own
+// multi-tenant app registration, pastes the credentials here, then grants
+// admin consent — which installs ClauseFlow in their tenant as an enterprise
+// app with the Graph permissions listed in ENTRA_GRAPH_APP_PERMISSIONS.
+//
+// Two things ride on this integration:
+//   1. Platform access — "Continue with Microsoft" on the login page.
+//   2. Contract responsibility — the directory is synced so a contract can
+//      name a responsible party, and notifications follow that person (and
+//      escalate to their Entra manager when they are gone or disabled).
+
+model EntraIntegration {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // App registration — supplied by the org, never shared across orgs.
+  clientId        String
+  encryptedSecret String // AES-256-GCM
+  tenantId        String? // set at consent time from the `tenant` callback param
+  tenantName      String?
+
+  // Consent state
+  consentGrantedAt   DateTime?
+  consentGrantedById String?
+  consentGrantedBy   User?     @relation("EntraConsentGrantedBy", fields: [consentGrantedById], references: [id], onDelete: SetNull)
+  consentError       String?
+
+  // Sign-in policy
+  ssoEnabled    Boolean  @default(true)
+  emailDomains  String[] @default([]) // home-realm discovery + JIT guard
+  autoProvision Boolean  @default(true)
+  defaultRole   String   @default("member") // role granted to JIT-provisioned members
+
+  // Directory sync
+  directorySyncEnabled Boolean   @default(true)
+  lastSyncedAt         DateTime?
+  lastSyncStatus       String? // "success" | "error"
+  lastSyncError        String?
+  lastSyncUserCount    Int?
+
+  connectedById String
+  connectedBy   User   @relation("EntraConnectedBy", fields: [connectedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  directoryUsers EntraDirectoryUser[]
+
+  @@index([tenantId])
+}
+
+model EntraDirectoryUser {
+  id             String           @id @default(cuid())
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  integrationId  String
+  integration    EntraIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  objectId          String // Entra user object id — immutable, the join key
+  userPrincipalName String
+  displayName       String
+  mail              String?
+  jobTitle          String?
+  department        String?
+  officeLocation    String?
+  accountEnabled    Boolean @default(true)
+  managerObjectId   String?
+
+  // Opt-out for directory people who have no ClauseFlow account: they cannot
+  // own a UserNotificationPreference row (it is keyed on User), so their
+  // one-click unsubscribe flips this instead.
+  notifyEnabled Boolean @default(true)
+
+  // Linked ClauseFlow user, when one exists. Set on directory sync (by email)
+  // and on SSO sign-in (by object id, which survives a UPN rename).
+  userId String?
+  user   User?   @relation("EntraDirectoryLink", fields: [userId], references: [id], onDelete: SetNull)
+
+  lastSyncedAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  responsibleForContracts Contract[] @relation("ContractResponsibleParty")
+
+  @@unique([integrationId, objectId])
+  @@index([organizationId, userId])
+  @@index([organizationId, managerObjectId])
+  @@index([organizationId, mail])
+  @@index([organizationId, displayName])
 }

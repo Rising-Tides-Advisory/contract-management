@@ -33,7 +33,8 @@
       "account": "Cuenta",
       "language": "Idioma"
     },
-    "renewals": "Renovaciones"
+    "renewals": "Renovaciones",
+    "entra": "Microsoft Entra ID"
   },
   "common": {
     "save": "Guardar",
@@ -164,7 +165,12 @@
     "creating": "Creando...",
     "createOrg": "Crear organización",
     "orgSlug": "Identificador: {slug}",
-    "createOrgFailed": "Error al crear la organización"
+    "createOrgFailed": "Error al crear la organización",
+    "continueWithMicrosoft": "Continuar con Microsoft",
+    "orContinueWith": "o",
+    "microsoftEmailPrompt": "Introduce tu correo corporativo para continuar con Microsoft",
+    "microsoftNotConfigured": "El inicio de sesión con Microsoft no está configurado para ese dominio de correo",
+    "microsoftRedirecting": "Redirigiendo a Microsoft..."
   },
   "settings": {
     "title": "Ajustes",

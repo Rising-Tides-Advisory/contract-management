@@ -137,6 +137,7 @@ All async work goes through named queues. Never do heavy work inline in an API r
 | `contract.embed` | Generate pgvector embeddings after text extraction |
 | `contract.ai_extract` | Run AI metadata extraction after embedding |
 | `alerts.check` | Daily cron: fire renewal alerts |
+| `entra.sync_directory` | Daily cron: sync each connected Entra tenant's directory |
 | `signing.sync` | Sync DocuSeal signing status |
 | `email.send` | Send queued email notifications |
 
@@ -176,7 +177,7 @@ These are intentionally deferred to later milestones. Do not implement in M0–M
 - Analytics / reporting dashboard → v2
 - Guided contracting / legal playbooks → v3
 - AI redlining with playbook enforcement → v3
-- SSO / SAML → v4 Enterprise
+- SAML / Okta SSO → v4 Enterprise (Microsoft Entra ID OIDC shipped in M13 — see `docs/entra-integration.md`)
 - CRM-native contract generation (Salesforce/HubSpot CPQ→contract) → v4 Enterprise
 - Mobile app → v4 Enterprise
 
@@ -245,6 +246,7 @@ AI and email are optional — the app runs without them (AI features degrade gra
 | M10 — Migration Tools | ✅ Complete | Import from CSV/spreadsheets, PandaDoc, ContractBook, DocuSign CLM, Google Drive, bulk PDF/DOCX — 5-tab UI, 14 API routes, row-level progress tracking |
 | M11 — Internationalization | ✅ Complete | EN/FR/DE/AR(RTL)/ES — next-intl, cookie-based locale, locale switcher in settings, nav translated, User.locale field |
 | M12 — Redlining | Pending | Tracked changes, version comparison (deferred post-launch) |
+| M13 — Entra Identity | ✅ Complete | Per-org Microsoft Entra ID: admin consent (enterprise app + Graph perms), OIDC sign-in with home-realm discovery, JIT provisioning, directory sync, contract responsible party + manager escalation |
 | 🚀 | — | **Open Source Launch** — publish repo publicly, LinkedIn, developer communities |
 
 ### Cloud / Hosted SaaS Track (after open source launch)
@@ -255,7 +257,7 @@ AI and email are optional — the app runs without them (AI features degrade gra
 | C2 — Billing | Stripe subscriptions, plan enforcement, usage tracking |
 | C3 — Managed AI | We host Anthropic/OpenAI keys, usage metering, per-org quotas |
 | C4 — AI Agents | Renewal Agent, Review Agent, Intake Agent (cloud-only) |
-| C5 — Enterprise | SSO/SAML (Okta, Azure AD), Google Drive/SharePoint import, commercial license, **per-contract/folder-level visibility ACLs** (user-scoped access on top of org-scope) |
+| C5 — Enterprise | SAML SSO (Okta), SCIM provisioning, Google Drive/SharePoint import, commercial license, **per-contract/folder-level visibility ACLs** (user-scoped access on top of org-scope) |
 
 ---
 

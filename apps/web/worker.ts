@@ -65,6 +65,7 @@ import type {
   ObligationsCheckJobData,
   ImportProcessJobData,
   ObligationExtractJobData,
+  EntraSyncJobData,
 } from "@/lib/jobs/queues"
 import {
 import { defaultModelFor } from "./lib/ai/models"
@@ -83,7 +84,14 @@ import { defaultModelFor } from "./lib/ai/models"
   importProcessQueue,
   getObligationExtractQueue,
   obligationExtractQueue,
+  entraSyncQueue,
 } from "@/lib/jobs/queues"
+import { syncDirectory } from "@/lib/entra/directory-sync"
+import {
+  resolveResponsibleRecipients,
+  shouldEscalateToManager,
+  type ResponsibleRecipient,
+} from "@/lib/entra/responsible"
 import type { SalesforcePollJobData } from "@/lib/jobs/queues"
 import { processImportJob } from "@/lib/import/processor"
 import { getCrmProvider } from "@/lib/crm"
@@ -1161,6 +1169,9 @@ const fanoutWorker = new Worker<NotificationFanoutJobData>(
         counterpartyName: true,
         organizationId: true,
         organization: { select: { id: true, name: true } },
+        responsibleParty: {
+          select: { id: true, displayName: true, mail: true, userPrincipalName: true },
+        },
       },
     })
     if (!contract) {
@@ -1187,6 +1198,16 @@ const fanoutWorker = new Worker<NotificationFanoutJobData>(
         counterpartyName: contract.counterpartyName,
         status: contract.status,
         ownerId: contract.ownerId,
+        // Null for orgs without an Entra integration, or when no explicit
+        // responsible party has been set on the contract.
+        responsibleParty: contract.responsibleParty
+          ? {
+              name: contract.responsibleParty.displayName,
+              email:
+                contract.responsibleParty.mail ??
+                contract.responsibleParty.userPrincipalName,
+            }
+          : null,
         actorId: actor?.id ?? null,
         actorName: actor?.name ?? null,
         metadata,
@@ -1262,6 +1283,32 @@ const fanoutWorker = new Worker<NotificationFanoutJobData>(
       actor?.id ?? null,
       metadata,
     )
+
+    // 5a. Entra: whoever is actually responsible for this contract.
+    //
+    // Only for events that already notify the owner — that is precisely the
+    // set of "someone needs to act on this contract" events, and it keeps
+    // assignee-targeted events (approval.requested) targeted. The responsible
+    // party is added alongside the owner rather than replacing them: the owner
+    // is the platform record, the responsible party is the accountable person,
+    // and silently dropping either would lose a notification someone expects.
+    let entraRecipients: ResponsibleRecipient[] = []
+    if (recipientIds.has(contract.ownerId)) {
+      try {
+        entraRecipients = await resolveResponsibleRecipients(db, contract.id, {
+          includeManager: shouldEscalateToManager(eventName),
+        })
+      } catch (err) {
+        // A directory lookup failure must not swallow the whole notification.
+        logger.error({ err, contractId: contract.id }, "[fanout] entra resolution failed")
+      }
+      for (const r of entraRecipients) {
+        // Linked accounts join the normal path so preferences and in-app
+        // delivery still apply; nobody is emailed about their own action.
+        if (r.userId && r.userId !== actor?.id) recipientIds.add(r.userId)
+      }
+    }
+
     if (recipientIds.size > 0) {
       const users = await db.user.findMany({
         where: { id: { in: Array.from(recipientIds) } },
@@ -1292,6 +1339,41 @@ const fanoutWorker = new Worker<NotificationFanoutJobData>(
           metadata,
           unsubscribeToken: token,
         })
+      }
+    }
+
+    // 5b. Responsible people who have no ClauseFlow account at all.
+    //
+    // This is the case the Entra integration exists for: legal names a business
+    // owner from the directory who has never signed in. They still need the
+    // mail, so they get it addressed straight from their directory mailbox —
+    // with an unsubscribe token keyed on the directory row (see the "entra:"
+    // branch in /api/user/unsubscribe), because a UserNotificationPreference
+    // row cannot exist for someone with no User record.
+    const unlinked = entraRecipients.filter((r) => !r.userId)
+    if (unlinked.length > 0) {
+      const defaultEnabled = DEFAULT_EMAIL_ENABLED[eventName as NotificationEventName] ?? false
+      if (defaultEnabled) {
+        for (const r of unlinked) {
+          await emailQueue.add("send", {
+            kind: "event_notification",
+            eventName,
+            to: r.email,
+            contractId: contract.id,
+            contractTitle: contract.title,
+            actorName: actor?.name ?? null,
+            metadata: { ...metadata, entraReason: r.reason },
+            unsubscribeToken: unsubscribeToken(
+              `entra:${r.directoryUserId}`,
+              contract.organizationId,
+              eventName,
+            ),
+          })
+        }
+        logger.info(
+          { contractId: contract.id, eventName, count: unlinked.length },
+          "[fanout] notified directory-only responsible parties",
+        )
       }
     }
 
@@ -2196,6 +2278,76 @@ salesforcePollQueue.add(
 ).then(() => logger.info("[salesforce.poll] Sync cron registered (*/15 * * * *)"))
   .catch((err) => logger.error({ err }, "[salesforce.poll] Failed to register cron"))
 
+// ─── Worker: entra.sync_directory ─────────────────────────────────────────────
+// Keeps the local snapshot of each connected tenant's directory current, so the
+// responsible-party picker and the notification escalation path have someone to
+// resolve to without calling Graph inline.
+
+const entraSyncWorker = new Worker<EntraSyncJobData>(
+  "entra.sync_directory",
+  async (job: Job<EntraSyncJobData>) => {
+    const db = getWorkerPrisma()
+
+    const integrations = await db.entraIntegration.findMany({
+      where: {
+        directorySyncEnabled: true,
+        consentGrantedAt: { not: null },
+        tenantId: { not: null },
+        ...(job.data.organizationId ? { organizationId: job.data.organizationId } : {}),
+      },
+      select: {
+        id: true,
+        organizationId: true,
+        clientId: true,
+        encryptedSecret: true,
+        tenantId: true,
+      },
+    })
+
+    if (integrations.length === 0) {
+      logger.info("[entra.sync] no connected tenants to sync")
+      return
+    }
+
+    // Sequential on purpose: each org's sync is many Graph round-trips against
+    // a per-tenant rate limit, and one slow tenant must not starve the others
+    // of a worker slot by fanning out concurrently.
+    let failures = 0
+    for (const integration of integrations) {
+      try {
+        await syncDirectory(db, integration)
+      } catch (err) {
+        failures++
+        // syncDirectory has already written the error onto the integration row,
+        // so one broken tenant never aborts the sweep.
+        logger.error(
+          { err, organizationId: integration.organizationId },
+          "[entra.sync] directory sync failed",
+        )
+      }
+    }
+
+    logger.info(
+      { total: integrations.length, failures },
+      "[entra.sync] sweep complete",
+    )
+  },
+  { connection, concurrency: 1 },
+)
+
+entraSyncWorker.on("failed", (job, err) =>
+  logger.error({ err, jobId: job?.id }, "[entra.sync] job failed"),
+)
+
+// Daily at 04:00 UTC — well clear of the 09:00 alert/obligation crons, so a
+// large tenant sync is not competing with the notification sweeps.
+entraSyncQueue.add(
+  "sync",
+  { triggeredAt: new Date().toISOString() },
+  { repeat: { pattern: "0 4 * * *" }, jobId: "entra-sync-daily" },
+).then(() => logger.info("[entra.sync] Daily cron registered (0 4 * * *)"))
+  .catch((err) => logger.error({ err }, "[entra.sync] Failed to register cron"))
+
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 // Collect all Worker instances so the shutdown handler can pause and drain them
 // in one pass rather than calling close() on each individually.
@@ -2215,6 +2367,7 @@ const allWorkers: Worker[] = [
   salesforcePollWorker,
   importWorker,
   obligationExtractWorker,
+  entraSyncWorker,
 ]
 
 async function gracefulShutdown(signal: string) {
@@ -2249,6 +2402,7 @@ async function gracefulShutdown(signal: string) {
     salesforcePollQueue.close(),
     importProcessQueue.close(),
     obligationExtractQueue.close(),
+    entraSyncQueue.close(),
   ])
 
   // Disconnect Prisma pools. The app Prisma client is imported by some worker

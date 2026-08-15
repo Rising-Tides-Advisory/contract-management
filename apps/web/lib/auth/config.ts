@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth"
 import { organization } from "better-auth/plugins"
 import { prismaAdapter } from "better-auth/adapters/prisma"
 import { prisma } from "@/lib/db/client"
+import { entraSso } from "@/lib/auth/entra-sso"
 import { sendInvitationEmail } from "@/lib/email/invitation"
 import { isEmailConfigured, sendEmail } from "@/lib/email/transport"
 import { logger } from "@/lib/logger"
@@ -58,6 +59,10 @@ export const auth = betterAuth({
         })
       },
     }),
+    // Per-organization Microsoft Entra ID sign-in. Credentials live on the
+    // EntraIntegration row rather than in `socialProviders`, so the tenant is
+    // resolved from the signing-in address at request time.
+    entraSso(),
   ],
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
