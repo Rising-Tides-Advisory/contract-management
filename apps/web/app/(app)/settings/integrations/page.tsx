@@ -128,8 +128,14 @@ function CategoryTabs({
   active: Category
   onChange: (c: Category) => void
 }) {
+  // overflow-y-hidden is required, not decorative: per the CSS overflow spec,
+  // setting one axis to a non-visible value computes the other from `visible` to
+  // `auto`. So `overflow-x-auto` alone also enables vertical scrolling, and the
+  // tabs' `-mb-px` overhangs the container by a pixel — enough to render a
+  // vertical scrollbar. Pinning the y axis removes it while keeping the
+  // horizontal scroll that narrow viewports need.
   return (
-    <div className="flex items-center gap-1 border-b border-border pb-0 mb-5 overflow-x-auto">
+    <div className="flex items-center gap-1 border-b border-border pb-0 mb-5 overflow-x-auto overflow-y-hidden">
       {CATEGORIES.map((c) => (
         <button
           key={c}
