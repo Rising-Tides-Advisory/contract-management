@@ -19,7 +19,21 @@ that keeps a process alive — Fly.io, Railway, Render, or any small VM.
 The repo already ships `fly.toml` pointing at `apps/web/Dockerfile.worker` for this.
 
 Without a running worker the app still works, but uploads are never text-extracted,
-embeddings and AI extraction never run, and renewal alerts never fire.
+embeddings and AI extraction never run, renewal alerts never fire, and Entra
+directory syncs are queued and never processed.
+
+**The worker does not deploy itself.** Vercel redeploys the app on every push to
+`main`, but nothing redeploys the worker — there is no CI job for it. Any change
+under `apps/web/worker.ts` or the `lib/` code it imports, and in particular any
+*new* queue, only reaches production when someone runs `fly deploy` (or the
+equivalent for whatever host you use). A worker built before a queue existed
+silently ignores that queue's jobs: they enqueue successfully and are never
+consumed, which looks like a feature that does nothing rather than an error.
+
+```bash
+fly deploy -c fly.toml          # from the repo root, after any worker change
+fly logs -a aakd-worker         # confirm it booted and registered its crons
+```
 
 ---
 

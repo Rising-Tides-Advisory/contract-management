@@ -145,6 +145,15 @@ Outbound webhook payloads include a `data.responsibleParty` object (`name`, `ema
 | Scope | Members only — B2B guests are excluded |
 | Fields | object id, UPN, display name, mail, job title, department, office, account state, manager |
 
+**The sync runs on the worker, not in the request.** Both the first sync after
+consent and the "Sync now" button enqueue a job on `entra.sync_directory`; if no
+worker process is running — or the running one was built before this queue
+existed — the job is accepted and never processed, and the page will keep
+reporting "Last sync: Never". `POST /api/entra/sync` returns 503 when it can
+detect that no worker is attached. See
+[deploy-vercel.md](./deploy-vercel.md#why-the-worker-needs-a-separate-host);
+the worker has to be redeployed by hand after any change to it.
+
 People who disappear from the directory are marked disabled rather than deleted.
 Deleting them would clear `Contract.responsiblePartyId` and erase who was accountable —
 exactly the history this feature exists to keep.
