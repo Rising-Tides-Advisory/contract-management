@@ -67,8 +67,8 @@ import type {
   ObligationExtractJobData,
   EntraSyncJobData,
 } from "@/lib/jobs/queues"
+import { defaultModelFor } from "@/lib/ai/models"
 import {
-import { defaultModelFor } from "./lib/ai/models"
   contractExtractQueue,
   contractAiExtractQueue,
   contractEmbedQueue,
