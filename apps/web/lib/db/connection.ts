@@ -2,16 +2,23 @@
  * Postgres connection resolution — shared by the app client, the worker client,
  * and prisma.config.ts (migrations).
  *
- * Supabase exposes two connection strings and they are NOT interchangeable:
+ * Every managed Postgres host exposes two connection strings, and they are NOT
+ * interchangeable:
  *
- *   Pooled (PgBouncer, port 6543)   → runtime queries. Transaction-mode pooling,
- *                                     so no session state and no advisory locks.
- *   Direct (port 5432)              → migrations. `prisma migrate deploy` takes an
- *                                     advisory lock and issues DDL, both of which
- *                                     fail through a transaction pooler.
+ *   Pooled   → runtime queries. Transaction-mode pooling, so no session state
+ *              and no advisory locks.
+ *   Direct   → migrations. `prisma migrate deploy` takes an advisory lock and
+ *              issues DDL, both of which fail through a transaction pooler.
  *
- * The Vercel↔Supabase integration injects these as POSTGRES_PRISMA_URL and
- * POSTGRES_URL_NON_POOLING, which is why they are accepted as aliases.
+ * Hosts disagree on how the two are distinguished and what they name them:
+ *
+ *   Neon      pooled host has "-pooler" in it; both on port 5432.
+ *             Injects DATABASE_URL + DATABASE_URL_UNPOOLED.
+ *   Supabase  pooled is port 6543, direct is 5432.
+ *             Vercel integration injects POSTGRES_PRISMA_URL + POSTGRES_URL_NON_POOLING.
+ *
+ * The canonical names are DATABASE_URL and DIRECT_URL; everything else is an
+ * alias so a host can be swapped without touching application code.
  */
 import { env, isServerless } from "@/lib/env"
 
@@ -26,7 +33,10 @@ export function getDatabaseUrl(): string {
  * are the same thing) keeps working with no extra configuration.
  */
 export function getDirectDatabaseUrl(): string {
-  return env("DIRECT_URL", "POSTGRES_URL_NON_POOLING") ?? getDatabaseUrl()
+  return (
+    env("DIRECT_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL_NON_POOLING") ??
+    getDatabaseUrl()
+  )
 }
 
 /**

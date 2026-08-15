@@ -26,6 +26,7 @@ const MANAGED_KEYS = [
   "POSTGRES_PRISMA_URL",
   "POSTGRES_URL",
   "POSTGRES_URL_NON_POOLING",
+  "DATABASE_URL_UNPOOLED",
   "POSTMARK_SERVER_TOKEN",
   "POSTMARK_API_TOKEN",
   "POSTMARK_TOKEN",
@@ -80,6 +81,20 @@ describe("database connection resolution", () => {
     process.env.POSTGRES_URL_NON_POOLING = "direct"
     expect(getDatabaseUrl()).toBe("pooled")
     expect(getDirectDatabaseUrl()).toBe("direct")
+  })
+
+  it("accepts Neon's DATABASE_URL_UNPOOLED as the direct connection", () => {
+    process.env.DATABASE_URL = "neon-pooled"
+    process.env.DATABASE_URL_UNPOOLED = "neon-direct"
+    expect(getDatabaseUrl()).toBe("neon-pooled")
+    expect(getDirectDatabaseUrl()).toBe("neon-direct")
+  })
+
+  it("prefers DIRECT_URL over every host-specific direct alias", () => {
+    process.env.DIRECT_URL = "canonical"
+    process.env.DATABASE_URL_UNPOOLED = "neon"
+    process.env.POSTGRES_URL_NON_POOLING = "supabase"
+    expect(getDirectDatabaseUrl()).toBe("canonical")
   })
 
   it("falls back to the pooled URL when no direct URL is configured", () => {

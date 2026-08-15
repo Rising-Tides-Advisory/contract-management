@@ -1,7 +1,8 @@
-# Deploying to Vercel (Supabase + Cloudflare R2 + Postmark)
+# Deploying to Vercel (Neon or Supabase + Cloudflare R2 + Postmark)
 
-This is the managed-services path: Vercel runs the Next.js app, Supabase provides
-Postgres with pgvector, Cloudflare R2 stores contract files, and Postmark sends mail.
+This is the managed-services path: Vercel runs the Next.js app, a managed Postgres
+with pgvector (Neon or Supabase) holds the data, Cloudflare R2 stores contract
+files, and Postmark sends mail.
 Nothing here is self-hosted except the BullMQ worker, which cannot run on Vercel.
 
 For the fully self-hosted Docker path, see [self-hosting.md](./self-hosting.md).
@@ -22,29 +23,56 @@ embeddings and AI extraction never run, and renewal alerts never fire.
 
 ---
 
-## 1. Supabase (database)
+## 1. Database (Neon or Supabase)
 
-1. Create a project. Note the database password — it appears once.
-2. **Database → Extensions → enable `vector`.** Migration
-   `20260507140000_m3_embeddings` runs `CREATE EXTENSION IF NOT EXISTS vector`, which
-   needs the extension available on the instance.
-3. **Project → Connect** and copy both connection strings:
+The app always needs **two** connection strings, and they are not interchangeable:
 
-| Env var | Supabase string | Port | Used for |
-|---|---|---|---|
-| `DATABASE_URL` | Transaction pooler | 6543 | Every runtime query |
-| `DIRECT_URL` | Session pooler / direct | 5432 | `prisma migrate` only |
+| Canonical env var | Connection | Used for |
+|---|---|---|
+| `DATABASE_URL` | Pooled | Every runtime query |
+| `DIRECT_URL` | Direct / unpooled | `prisma migrate` only |
 
-Append `?pgbouncer=true` to `DATABASE_URL`.
+Both are required on any host that fronts Postgres with a transaction pooler.
+`prisma migrate deploy` takes a Postgres advisory lock and issues DDL — neither
+survives one — so migrations pointed at the pooled URL hang or fail.
+`prisma.config.ts` resolves the direct URL for exactly this reason.
 
-Both are required. `prisma migrate deploy` takes a Postgres advisory lock and issues
-DDL — neither survives a transaction-mode pooler, so pointing migrations at port 6543
-makes them hang or fail. `prisma.config.ts` resolves the direct URL for exactly this
-reason.
+Enable **pgvector** before migrating either way: migration
+`20260507140000_m3_embeddings` runs `CREATE EXTENSION IF NOT EXISTS vector`, which
+needs the extension available on the instance.
 
-If you link the project through the Vercel↔Supabase integration, it injects
-`POSTGRES_PRISMA_URL` and `POSTGRES_URL_NON_POOLING` instead. Those are accepted as
-aliases — no manual copying needed.
+### Neon
+
+Install the Neon integration from the Vercel marketplace and connect the project.
+**Leave the Custom Prefix field empty.** The prefix exists for running several
+databases in one Vercel project (`PRIMARY_`, `ANALYTICS_`); with one database it only
+renames the variables away from the defaults the app already reads. If the field
+insists on a value, use `DATABASE` — that yields `DATABASE_URL`, the canonical name.
+
+The integration then injects:
+
+| Injected name | Connection | Read by the app as |
+|---|---|---|
+| `DATABASE_URL` | Pooled (host contains `-pooler`) | `DATABASE_URL` |
+| `DATABASE_URL_UNPOOLED` | Direct | `DIRECT_URL` (alias) |
+
+Note Neon distinguishes the two by **hostname**, not port — both are 5432, and the
+pooled host has `-pooler` in it. Do not assume the Supabase port convention.
+
+### Supabase
+
+**Project → Connect**, then copy the transaction pooler string (port 6543, append
+`?pgbouncer=true`) to `DATABASE_URL` and the direct string (port 5432) to `DIRECT_URL`.
+
+Linking through the Vercel↔Supabase integration instead injects
+`POSTGRES_PRISMA_URL` and `POSTGRES_URL_NON_POOLING`, both accepted as aliases.
+
+### Swapping hosts later
+
+The app only ever reads `DATABASE_URL` and `DIRECT_URL`. Everything else is an alias
+resolved in `lib/db/connection.ts`, canonical names first. To move hosts, point those
+two names at the new database — no application code changes. If a new host injects
+names not on the alias list, add them there rather than renaming anything in the app.
 
 ### Connection pool sizing
 
@@ -145,8 +173,8 @@ Shared Environment Variable group at the team level.
 
 | Variable | Notes |
 |---|---|
-| `DATABASE_URL` | Supabase pooler, port 6543, `?pgbouncer=true` |
-| `DIRECT_URL` | Supabase direct, port 5432 |
+| `DATABASE_URL` | Pooled connection. Supabase: port 6543 + `?pgbouncer=true`. Neon: injected automatically. |
+| `DIRECT_URL` | Direct connection. Neon injects it as `DATABASE_URL_UNPOOLED` (accepted as an alias). |
 | `BETTER_AUTH_SECRET` | `openssl rand -base64 32` |
 | `BETTER_AUTH_URL` | Your production URL |
 | `NEXT_PUBLIC_APP_URL` | Same as `BETTER_AUTH_URL` |
@@ -178,8 +206,8 @@ The worker host needs the same values, minus the `NEXT_PUBLIC_*` and auth URL en
 **Build fails with `implicitly has an 'any' type`** — `prisma generate` did not run.
 Confirm the build command resolves to the workspace `build` script.
 
-**Migrations hang** — `DIRECT_URL` is pointing at the transaction pooler (6543) instead
-of the direct connection (5432).
+**Migrations hang** — the direct URL is pointing at the pooled connection. On Supabase
+that means port 6543 instead of 5432; on Neon it means the host with `-pooler` in it.
 
 **`Max client connections reached`** — `DATABASE_POOL_SIZE` is set too high for
 serverless. Unset it and let it default to 1 on Vercel.

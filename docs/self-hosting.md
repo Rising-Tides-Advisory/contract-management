@@ -82,7 +82,7 @@ Navigate to `http://localhost:3000` (or your configured URL). Create your first 
 | Variable | Description |
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string (pooled). Set automatically by Docker Compose. |
-| `DIRECT_URL` | Direct, non-pooled connection string. **Required with a transaction pooler such as Supabase's PgBouncer** — `prisma migrate` takes an advisory lock and runs DDL, neither of which survives a pooler. Falls back to `DATABASE_URL` when unset. |
+| `DIRECT_URL` | Direct, non-pooled connection string. **Required with any transaction pooler** (Neon, Supabase) — `prisma migrate` takes an advisory lock and runs DDL, neither of which survives one. Falls back to `DATABASE_URL` when unset. Accepted aliases: `DATABASE_URL_UNPOOLED` (Neon), `POSTGRES_URL_NON_POOLING` (Supabase). |
 | `POSTGRES_PASSWORD` | Postgres password. Generate: `openssl rand -base64 24` |
 | `BETTER_AUTH_SECRET` | Auth signing secret. Generate: `openssl rand -base64 32` |
 | `BETTER_AUTH_URL` | Full URL of your ClauseFlow instance (e.g. `https://clm.yourcompany.com`) |

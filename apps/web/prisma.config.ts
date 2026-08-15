@@ -8,12 +8,14 @@ import type { PrismaConfig } from "prisma"
  * such as Supabase's PgBouncer on port 6543. Falls back to the pooled URL when no
  * separate direct URL is configured (plain self-hosted Postgres).
  *
- * Resolution order for the direct URL: DIRECT_URL, then POSTGRES_URL_NON_POOLING
- * (injected by the Vercel↔Supabase integration).
+ * Resolution order for the direct URL: DIRECT_URL, then the names the managed
+ * hosts inject — DATABASE_URL_UNPOOLED (Neon) and POSTGRES_URL_NON_POOLING
+ * (Vercel↔Supabase integration).
  */
 function directUrl(): string {
   const candidates = [
     process.env.DIRECT_URL,
+    process.env.DATABASE_URL_UNPOOLED,
     process.env.POSTGRES_URL_NON_POOLING,
     process.env.DATABASE_URL,
     process.env.POSTGRES_PRISMA_URL,
