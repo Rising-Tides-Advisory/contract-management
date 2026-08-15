@@ -5,6 +5,7 @@ import { writeActivity } from "@/lib/db/activity"
 import { rateLimit, rateLimitResponse } from "@/lib/rate-limit"
 import { resolveAiConfig } from "@/lib/ai/resolve"
 import { RISK_SYSTEM_PROMPT } from "@/lib/ai/prompts"
+import { defaultModelFor } from "@/lib/ai/models"
 import { logger } from "@/lib/logger"
 import Anthropic from "@anthropic-ai/sdk"
 import OpenAI from "openai"
@@ -25,7 +26,7 @@ async function callAiForRiskScore(text: string, organizationId: string): Promise
     const client = getAnthropicClient(aiConfig.apiKey)
     try {
       const msg = await client.messages.create({
-        model: aiConfig.model ?? "claude-3-5-haiku-latest",
+        model: aiConfig.model ?? defaultModelFor("anthropic"),
         max_tokens: 1024,
         system: RISK_SYSTEM_PROMPT,
         messages: [{ role: "user", content: `Contract text:\n\n${truncated}` }],
@@ -43,7 +44,7 @@ async function callAiForRiskScore(text: string, organizationId: string): Promise
     const client = getOpenAIClient(aiConfig.apiKey)
     try {
       const resp = await client.chat.completions.create({
-        model: aiConfig.model ?? "gpt-4o-mini",
+        model: aiConfig.model ?? defaultModelFor("openai"),
         messages: [
           { role: "system", content: RISK_SYSTEM_PROMPT },
           { role: "user", content: `Contract text:\n\n${truncated}` },
@@ -61,7 +62,7 @@ async function callAiForRiskScore(text: string, organizationId: string): Promise
 
   if (aiConfig.provider === "ollama") {
     const ollamaBase = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434"
-    const ollamaModel = aiConfig.model ?? "llama3.1"
+    const ollamaModel = aiConfig.model ?? defaultModelFor("ollama")
     const res = await fetch(`${ollamaBase}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

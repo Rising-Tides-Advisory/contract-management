@@ -67,6 +67,7 @@ import type {
   ObligationExtractJobData,
 } from "@/lib/jobs/queues"
 import {
+import { defaultModelFor } from "./lib/ai/models"
   contractExtractQueue,
   contractAiExtractQueue,
   contractEmbedQueue,
@@ -434,7 +435,7 @@ async function callExtractionLLM(text: string): Promise<string | null> {
   if (provider === "anthropic") {
     if (!process.env.ANTHROPIC_API_KEY) { logger.warn("[ai_extract] AI_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set"); return null }
     const msg = await getAnthropic().messages.create({
-      model: process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5",
+      model: process.env.ANTHROPIC_MODEL ?? defaultModelFor("anthropic"),
       max_tokens: 2048,
       temperature: 0, // structured extraction — deterministic output
       system: EXTRACTION_SYSTEM_PROMPT,
@@ -447,7 +448,7 @@ async function callExtractionLLM(text: string): Promise<string | null> {
   if (provider === "openai") {
     if (!process.env.OPENAI_API_KEY) { logger.warn("[ai_extract] AI_PROVIDER=openai but OPENAI_API_KEY is not set"); return null }
     const res = await getOpenAI().chat.completions.create({
-      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+      model: process.env.OPENAI_MODEL ?? defaultModelFor("openai"),
       max_tokens: 2048,
       temperature: 0, // structured extraction — deterministic output
       messages: [
@@ -460,7 +461,7 @@ async function callExtractionLLM(text: string): Promise<string | null> {
 
   if (provider === "ollama") {
     const base = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/$/, "")
-    const model = process.env.OLLAMA_MODEL ?? "llama3"
+    const model = process.env.OLLAMA_MODEL ?? defaultModelFor("ollama")
     const res = await fetch(`${base}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -975,7 +976,7 @@ async function callObligationLLM(text: string): Promise<string | null> {
   if (provider === "anthropic") {
     if (!process.env.ANTHROPIC_API_KEY) return null
     const msg = await getAnthropic().messages.create({
-      model: process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5",
+      model: process.env.ANTHROPIC_MODEL ?? defaultModelFor("anthropic"),
       max_tokens: 2048,
       temperature: 0, // obligation extraction — deterministic, factual output
       system: OBLIGATION_EXTRACTION_PROMPT,
@@ -988,7 +989,7 @@ async function callObligationLLM(text: string): Promise<string | null> {
   if (provider === "openai") {
     if (!process.env.OPENAI_API_KEY) return null
     const res = await getOpenAI().chat.completions.create({
-      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+      model: process.env.OPENAI_MODEL ?? defaultModelFor("openai"),
       max_tokens: 2048,
       temperature: 0, // obligation extraction — deterministic, factual output
       messages: [
@@ -1001,7 +1002,7 @@ async function callObligationLLM(text: string): Promise<string | null> {
 
   if (provider === "ollama") {
     const base = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/$/, "")
-    const model = process.env.OLLAMA_MODEL ?? "llama3"
+    const model = process.env.OLLAMA_MODEL ?? defaultModelFor("ollama")
     const res = await fetch(`${base}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

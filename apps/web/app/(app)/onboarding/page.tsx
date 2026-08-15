@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { MODEL_OPTIONS, DEFAULT_MODEL } from "@/lib/ai/models"
 import Link from "next/link"
 
 // ─── Logos ────────────────────────────────────────────────────────────────────
@@ -55,24 +56,6 @@ const PROVIDER_META: Record<Provider, { name: string; subtitle: string }> = {
   anthropic: { name: "Anthropic", subtitle: "Claude models" },
   openai: { name: "OpenAI", subtitle: "GPT models" },
   ollama: { name: "Ollama", subtitle: "Local / self-hosted" },
-}
-
-const CLOUD_MODELS: Record<"anthropic" | "openai", { value: string; label: string }[]> = {
-  anthropic: [
-    { value: "claude-haiku-4-5", label: "Claude Haiku (fastest)" },
-    { value: "claude-sonnet-4-5", label: "Claude Sonnet (balanced)" },
-    { value: "claude-opus-4-5", label: "Claude Opus (most capable)" },
-  ],
-  openai: [
-    { value: "gpt-4o-mini", label: "GPT-4o Mini (fastest)" },
-    { value: "gpt-4o", label: "GPT-4o (balanced)" },
-    { value: "gpt-4-turbo", label: "GPT-4 Turbo (powerful)" },
-  ],
-}
-
-const DEFAULT_MODEL: Record<"anthropic" | "openai", string> = {
-  anthropic: "claude-haiku-4-5",
-  openai: "gpt-4o-mini",
 }
 
 // ─── Provider card ─────────────────────────────────────────────────────────────
@@ -324,9 +307,12 @@ export default function OnboardingPage() {
                   <SelectValue placeholder="Select a model" />
                 </SelectTrigger>
                 <SelectContent>
-                  {CLOUD_MODELS[provider as "anthropic" | "openai"].map((m) => (
+                  {MODEL_OPTIONS[provider as "anthropic" | "openai"].map((m) => (
                     <SelectItem key={m.value} value={m.value}>
-                      {m.label}
+                      <span className="flex flex-col items-start">
+                        <span>{m.label}</span>
+                        <span className="text-xs text-muted-foreground">{m.hint}</span>
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>

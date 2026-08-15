@@ -18,6 +18,7 @@ import { AsyncLocalStorage } from "node:async_hooks"
 import { prisma } from "@/lib/db/client"
 import { decrypt } from "@/lib/notifications/crypto"
 import { logger } from "@/lib/logger"
+import { defaultModelFor } from "@/lib/ai/models"
 
 export type AiProvider = "anthropic" | "openai" | "ollama"
 
@@ -90,7 +91,7 @@ async function resolveAiConfigUncached(
     return {
       provider: "anthropic",
       apiKey: process.env.ANTHROPIC_API_KEY,
-      model: process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5",
+      model: process.env.ANTHROPIC_MODEL ?? defaultModelFor("anthropic"),
       source: "env",
     }
   }
@@ -99,7 +100,7 @@ async function resolveAiConfigUncached(
     return {
       provider: "openai",
       apiKey: process.env.OPENAI_API_KEY,
-      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+      model: process.env.OPENAI_MODEL ?? defaultModelFor("openai"),
       source: "env",
     }
   }
@@ -108,7 +109,7 @@ async function resolveAiConfigUncached(
     return {
       provider: "ollama",
       apiKey: null,
-      model: process.env.OLLAMA_MODEL ?? "llama3",
+      model: process.env.OLLAMA_MODEL ?? defaultModelFor("ollama"),
       source: "env",
     }
   }
@@ -118,7 +119,7 @@ async function resolveAiConfigUncached(
     return {
       provider: "anthropic",
       apiKey: process.env.ANTHROPIC_API_KEY,
-      model: process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5",
+      model: process.env.ANTHROPIC_MODEL ?? defaultModelFor("anthropic"),
       source: "env",
     }
   }
@@ -127,7 +128,7 @@ async function resolveAiConfigUncached(
     return {
       provider: "openai",
       apiKey: process.env.OPENAI_API_KEY,
-      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+      model: process.env.OPENAI_MODEL ?? defaultModelFor("openai"),
       source: "env",
     }
   }
@@ -136,7 +137,7 @@ async function resolveAiConfigUncached(
     return {
       provider: "ollama",
       apiKey: null,
-      model: process.env.OLLAMA_MODEL ?? "llama3",
+      model: process.env.OLLAMA_MODEL ?? defaultModelFor("ollama"),
       source: "env",
     }
   }

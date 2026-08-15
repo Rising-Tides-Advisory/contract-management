@@ -83,6 +83,8 @@ import { ContractCrmSection } from "@/components/crm/contract-crm-section"
 import { Contract, ContractFile, Activity, ContractStatus, ContractAlert, Tag, Approval, OrgMember, SigningStatus } from "@/lib/types"
 import { DocumentViewerDialog } from "@/components/contracts/document-viewer-dialog"
 import { cn } from "@/lib/utils"
+import { currencyLabel } from "@/lib/currencies"
+import { useOrgCurrencies, pickerOptions } from "@/lib/use-org-currencies"
 
 interface AIExtraction {
   id: string
@@ -122,7 +124,6 @@ const STATUS_DOT: Record<ContractStatus, string> = {
 }
 
 const CONTRACT_TYPES = ["NDA", "MSA", "SOW", "EMPLOYMENT", "VENDOR", "CUSTOMER", "OTHER"] as const
-const CURRENCIES = ["USD", "EUR", "GBP", "JPY", "OTHER"] as const
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
@@ -304,6 +305,7 @@ export default function ContractDetailPage() {
   const [editOpen, setEditOpen] = useState(searchParams.get("edit") === "true")
   const [uploadOpen, setUploadOpen] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Contract>>({})
+  const currencies = useOrgCurrencies()
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -1994,15 +1996,18 @@ export default function ContractDetailPage() {
               <div className="space-y-1.5">
                 <Label>Currency</Label>
                 <Select
-                  value={editForm.currency ?? "USD"}
+                  value={editForm.currency ?? currencies.default}
                   onValueChange={(v) => setEditForm((p) => ({ ...p, currency: v }))}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CURRENCIES.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    {pickerOptions(
+                      currencies.enabled,
+                      editForm.currency ?? currencies.default,
+                    ).map((c) => (
+                      <SelectItem key={c} value={c}>{currencyLabel(c)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

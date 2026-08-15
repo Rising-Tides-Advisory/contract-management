@@ -1,5 +1,6 @@
 import { resolveAuth } from "@/lib/auth/middleware"
 import { prisma } from "@/lib/db/client"
+import { defaultModelFor } from "@/lib/ai/models"
 
 export async function GET(req: Request) {
   const ctx = await resolveAuth(req)
@@ -25,7 +26,7 @@ export async function GET(req: Request) {
   if (envProvider === "anthropic" && process.env.ANTHROPIC_API_KEY) {
     return Response.json({
       provider: "anthropic",
-      model: process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5",
+      model: process.env.ANTHROPIC_MODEL ?? defaultModelFor("anthropic"),
       hasKey: true,
       source: "env",
     })
@@ -33,7 +34,7 @@ export async function GET(req: Request) {
   if (envProvider === "openai" && process.env.OPENAI_API_KEY) {
     return Response.json({
       provider: "openai",
-      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+      model: process.env.OPENAI_MODEL ?? defaultModelFor("openai"),
       hasKey: true,
       source: "env",
     })
@@ -41,7 +42,7 @@ export async function GET(req: Request) {
   if (envProvider === "ollama" && process.env.OLLAMA_BASE_URL) {
     return Response.json({
       provider: "ollama",
-      model: process.env.OLLAMA_MODEL ?? "llama3",
+      model: process.env.OLLAMA_MODEL ?? defaultModelFor("ollama"),
       hasKey: true,
       source: "env",
     })
@@ -51,7 +52,7 @@ export async function GET(req: Request) {
   if (process.env.ANTHROPIC_API_KEY) {
     return Response.json({
       provider: "anthropic",
-      model: process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5",
+      model: process.env.ANTHROPIC_MODEL ?? defaultModelFor("anthropic"),
       hasKey: true,
       source: "env",
     })
@@ -59,7 +60,7 @@ export async function GET(req: Request) {
   if (process.env.OPENAI_API_KEY) {
     return Response.json({
       provider: "openai",
-      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+      model: process.env.OPENAI_MODEL ?? defaultModelFor("openai"),
       hasKey: true,
       source: "env",
     })
@@ -67,7 +68,7 @@ export async function GET(req: Request) {
   if (process.env.OLLAMA_BASE_URL) {
     return Response.json({
       provider: "ollama",
-      model: process.env.OLLAMA_MODEL ?? "llama3",
+      model: process.env.OLLAMA_MODEL ?? defaultModelFor("ollama"),
       hasKey: true,
       source: "env",
     })

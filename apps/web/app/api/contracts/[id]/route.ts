@@ -10,6 +10,7 @@ import { fireAndLog } from "@/lib/utils/fire-and-log"
 import { SECURE_HEADERS } from "@/lib/api-headers"
 import { requestLogger } from "@/lib/logger"
 import { z } from "zod"
+import { CurrencyCodeSchema } from "@/lib/currencies"
 
 // Allowed status transitions — all forward and backward moves permitted so
 // users can correct mistakes freely. Only ARCHIVED is semi-terminal (can
@@ -35,7 +36,7 @@ const UpdateContractSchema = z.object({
   counterpartyName: z.string().nullable().optional(),
   counterpartyContact: z.string().email().or(z.literal("")).nullable().optional(),
   value: z.number().positive().nullable().optional(),
-  currency: z.string().length(3).nullable().optional(),
+  currency: CurrencyCodeSchema.nullable().optional(),
   governingLaw: z.string().nullable().optional(),
   startDate: isoDate.nullable().optional(),
   endDate: isoDate.nullable().optional(),

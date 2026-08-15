@@ -11,6 +11,8 @@ import { requestLogger } from "@/lib/logger"
 import { captureServerEvent } from "@/lib/posthog-server"
 import { Prisma } from "@prisma/client"
 import { z } from "zod"
+import { CurrencyCodeSchema } from "@/lib/currencies"
+import { getDefaultCurrency } from "@/lib/org-currency"
 
 const CreateContractSchema = z.object({
   title: z.string().min(1).max(500),
@@ -18,7 +20,7 @@ const CreateContractSchema = z.object({
   counterpartyName: z.string().optional(),
   counterpartyContact: z.string().email().optional().or(z.literal("")),
   value: z.number().positive().optional(),
-  currency: z.string().min(1).max(10).default("USD"),
+  currency: CurrencyCodeSchema.optional(),
   governingLaw: z.string().optional(),
   startDate: z.string().date().optional(),
   endDate: z.string().date().optional(),
@@ -174,6 +176,7 @@ export async function POST(req: Request) {
     // scalar FK and a relation connect for the same field simultaneously.
     const data: Prisma.ContractUncheckedCreateInput = {
       ...rest,
+      currency: rest.currency ?? (await getDefaultCurrency(ctx.organizationId)),
       ownerId: ctx.userId,
       organizationId: ctx.organizationId,
       startDate: startDate ? new Date(startDate) : undefined,

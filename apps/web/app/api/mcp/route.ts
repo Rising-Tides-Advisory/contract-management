@@ -7,6 +7,8 @@ import { QA_SYSTEM_PROMPT } from "@/lib/ai/prompts"
 import { rateLimit } from "@/lib/rate-limit"
 import { Prisma } from "@prisma/client"
 import { z } from "zod"
+import { CurrencyCodeSchema } from "@/lib/currencies"
+import { defaultModelFor } from "@/lib/ai/models"
 
 // ---------------------------------------------------------------------------
 // JSON-RPC 2.0 types
@@ -120,7 +122,7 @@ const TOOLS = [
         counterpartyName: { type: "string" },
         counterpartyContact: { type: "string", description: "Email address" },
         value: { type: "number" },
-        currency: { type: "string" },
+        currency: { type: "string", description: "3-letter ISO 4217 code, e.g. USD" },
         startDate: { type: "string", description: "ISO date YYYY-MM-DD" },
         endDate: { type: "string", description: "ISO date YYYY-MM-DD" },
         notes: { type: "string" },
@@ -300,7 +302,7 @@ const CreateContractSchema = z.object({
   counterpartyName: z.string().optional(),
   counterpartyContact: z.string().email().optional().or(z.literal("")),
   value: z.number().positive().optional(),
-  currency: z.string().length(3).default("USD"),
+  currency: CurrencyCodeSchema.default("USD"),
   startDate: z.string().date().optional(),
   endDate: z.string().date().optional(),
   notes: z.string().max(10000).optional(),
@@ -702,7 +704,7 @@ async function toolAskContract(
     const anthropic = getAnthropicClient()
     if (anthropic) {
       const msg = await anthropic.messages.create({
-        model: process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5",
+        model: process.env.ANTHROPIC_MODEL ?? defaultModelFor("anthropic"),
         max_tokens: 1024,
         system: QA_SYSTEM_PROMPT,
         messages: [{ role: "user", content: userContent }],
@@ -717,7 +719,7 @@ async function toolAskContract(
           Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         },
         body: JSON.stringify({
-          model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+          model: process.env.OPENAI_MODEL ?? defaultModelFor("openai"),
           max_tokens: 1024,
           messages: [
             { role: "system", content: QA_SYSTEM_PROMPT },

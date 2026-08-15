@@ -7,10 +7,25 @@ import { ImageIcon, Eye, EyeOff, CheckCircle2, XCircle, Loader2 } from "lucide-r
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { useActiveOrganization, organization } from "@/lib/auth/client"
 import { useTranslations } from "next-intl"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { MODEL_OPTIONS, DEFAULT_MODEL, isKnownModel } from "@/lib/ai/models"
+import {
+  CURRENCIES,
+  currencyLabel,
+  DEFAULT_ENABLED_CURRENCIES,
+  FALLBACK_CURRENCY,
+  type OrgCurrencySettings,
+} from "@/lib/currencies"
 
 type AIStatus = {
   provider: string | null
@@ -58,12 +73,19 @@ export default function OrgSettingsPage() {
   const [logoUploading, setLogoUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [aiStatus, setAiStatus] = useState<AIStatus | null>(null)
+  const [enabledCurrencies, setEnabledCurrencies] = useState<string[]>(
+    DEFAULT_ENABLED_CURRENCIES,
+  )
+  const [defaultCurrency, setDefaultCurrency] = useState<string>(FALLBACK_CURRENCY)
+  const [currencyQuery, setCurrencyQuery] = useState("")
+  const [savingCurrencies, setSavingCurrencies] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // AI config inline edit state
   const [showAiForm, setShowAiForm] = useState(false)
   const [aiProvider, setAiProvider] = useState<"anthropic" | "openai">("anthropic")
   const [aiApiKey, setAiApiKey] = useState("")
+  const [aiModel, setAiModel] = useState<string>(DEFAULT_MODEL.anthropic)
   const [showAiKey, setShowAiKey] = useState(false)
   const [aiConfigStatus, setAiConfigStatus] = useState<AiConfigStatus>("idle")
   const [aiConfigError, setAiConfigError] = useState("")
@@ -73,11 +95,29 @@ export default function OrgSettingsPage() {
     if (activeOrg?.name) setName(activeOrg.name)
   }, [activeOrg])
 
+  function openAiForm() {
+    const provider = aiStatus?.provider === "openai" ? "openai" : "anthropic"
+    setAiProvider(provider)
+    setAiModel(aiStatus?.model ?? DEFAULT_MODEL[provider])
+    setAiConfigStatus("idle")
+    setAiConfigError("")
+    setShowAiForm(true)
+  }
+
   useEffect(() => {
     fetch("/api/org")
       .then((r) => r.json())
-      .then((data: { name?: string; meta?: Record<string, unknown>; logo?: string | null }) => {
+      .then((data: {
+        name?: string
+        meta?: Record<string, unknown>
+        logo?: string | null
+        currencies?: OrgCurrencySettings
+      }) => {
         if (data.name) setName(data.name)
+        if (data.currencies?.enabled?.length) {
+          setEnabledCurrencies(data.currencies.enabled)
+          setDefaultCurrency(data.currencies.default)
+        }
         if (data.meta?.domain) setDomain(data.meta.domain as string)
         if (data.meta?.timezone) setTimezone(data.meta.timezone as string)
         if (data.meta?.industry) setIndustry(data.meta.industry as string)
@@ -121,6 +161,43 @@ export default function OrgSettingsPage() {
     e.preventDefault()
     const file = e.dataTransfer.files[0]
     if (file) handleLogoFile(file)
+  }
+
+  function toggleCurrency(code: string) {
+    setEnabledCurrencies((prev) => {
+      if (!prev.includes(code)) return [...prev, code]
+      // Never leave the org with an empty picker.
+      if (prev.length === 1) {
+        toast.error("At least one currency must stay enabled")
+        return prev
+      }
+      const next = prev.filter((c) => c !== code)
+      // Dropping the default would leave the create form preselecting a
+      // currency its own picker no longer offers, which the API rejects.
+      if (code === defaultCurrency) setDefaultCurrency(next[0])
+      return next
+    })
+  }
+
+  async function saveCurrencies() {
+    setSavingCurrencies(true)
+    try {
+      const res = await fetch("/api/org", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabledCurrencies, defaultCurrency }),
+      })
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: unknown }
+        throw new Error(typeof err.error === "string" ? err.error : "")
+      }
+      toast.success("Currencies updated")
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : ""
+      toast.error(detail || "Failed to update currencies")
+    } finally {
+      setSavingCurrencies(false)
+    }
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -273,6 +350,97 @@ export default function OrgSettingsPage() {
         )}
       </div>
 
+      {/* Currencies */}
+      <div className="rounded-[var(--radius)] border border-border bg-card p-6">
+        <h2 className="text-sm font-semibold text-foreground">Currencies</h2>
+        <p className="text-xs text-muted-foreground mt-1">
+          Only the currencies you enable appear when creating or editing a
+          contract. The default is preselected on new contracts.
+        </p>
+
+        <div className="mt-4 space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">Default currency</Label>
+            <Select
+              value={defaultCurrency}
+              onValueChange={(v) => { if (v) setDefaultCurrency(v) }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a default" />
+              </SelectTrigger>
+              <SelectContent>
+                {/* Only enabled currencies — the API rejects a default that is
+                    not in the enabled list. */}
+                {enabledCurrencies.map((c) => (
+                  <SelectItem key={c} value={c}>{currencyLabel(c)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label className="text-sm font-medium">
+                Enabled currencies
+                <span className="ml-2 font-normal text-muted-foreground">
+                  {enabledCurrencies.length} selected
+                </span>
+              </Label>
+              <Input
+                value={currencyQuery}
+                onChange={(e) => setCurrencyQuery(e.target.value)}
+                placeholder="Search…"
+                className="h-8 w-40"
+              />
+            </div>
+
+            <div className="max-h-72 overflow-y-auto rounded-[var(--radius)] border border-border divide-y divide-border">
+              {CURRENCIES.filter((c) => {
+                const q = currencyQuery.trim().toLowerCase()
+                return !q || c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
+              }).map((c) => {
+                const checked = enabledCurrencies.includes(c.code)
+                return (
+                  <label
+                    key={c.code}
+                    className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-muted/50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleCurrency(c.code)}
+                      className="size-4 accent-primary"
+                    />
+                    <span className="font-mono text-xs w-10 text-muted-foreground">{c.code}</span>
+                    <span className="flex-1 text-foreground">{c.name}</span>
+                    {c.code === defaultCurrency && (
+                      <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        Default
+                      </span>
+                    )}
+                  </label>
+                )
+              })}
+            </div>
+
+            {/* A code stored through the API may sit outside the curated list.
+                Show it so disabling everything else does not silently drop it. */}
+            {enabledCurrencies.filter((c) => !CURRENCIES.some((x) => x.code === c)).length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Also enabled:{" "}
+                {enabledCurrencies
+                  .filter((c) => !CURRENCIES.some((x) => x.code === c))
+                  .join(", ")}
+              </p>
+            )}
+          </div>
+
+          <Button size="sm" onClick={saveCurrencies} disabled={savingCurrencies}>
+            {savingCurrencies ? "Saving…" : "Save currencies"}
+          </Button>
+        </div>
+      </div>
+
       {/* AI Configuration */}
       <div className="rounded-[var(--radius)] border border-border bg-card p-6">
         <h2 className="text-sm font-semibold text-foreground mb-4">{t("aiConfig")}</h2>
@@ -302,7 +470,7 @@ export default function OrgSettingsPage() {
               Using server-level AI credentials. You can override with your own key below.
             </p>
             {!showAiForm && (
-              <Button variant="outline" size="sm" onClick={() => setShowAiForm(true)}>
+              <Button variant="outline" size="sm" onClick={openAiForm}>
                 Set org key
               </Button>
             )}
@@ -328,7 +496,7 @@ export default function OrgSettingsPage() {
             </div>
             {!showAiForm && !showRemoveConfirm && (
               <div className="flex gap-2 pt-1">
-                <Button variant="outline" size="sm" onClick={() => setShowAiForm(true)}>Change</Button>
+                <Button variant="outline" size="sm" onClick={openAiForm}>Change</Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -378,7 +546,7 @@ export default function OrgSettingsPage() {
               .
             </p>
             {!showAiForm && (
-              <Button variant="outline" size="sm" onClick={() => setShowAiForm(true)}>
+              <Button variant="outline" size="sm" onClick={openAiForm}>
                 Set up AI
               </Button>
             )}
@@ -395,7 +563,12 @@ export default function OrgSettingsPage() {
                   <button
                     key={p}
                     type="button"
-                    onClick={() => { setAiProvider(p); setAiConfigStatus("idle"); setAiConfigError("") }}
+                    onClick={() => {
+                      setAiProvider(p)
+                      setAiModel(DEFAULT_MODEL[p])
+                      setAiConfigStatus("idle")
+                      setAiConfigError("")
+                    }}
                     className={cn(
                       "flex-1 py-2 px-3 rounded-[calc(var(--radius)-1px)] border text-sm font-medium transition-all",
                       aiProvider === p
@@ -407,6 +580,35 @@ export default function OrgSettingsPage() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Model</Label>
+              <Select value={aiModel} onValueChange={(v) => { if (v) setAiModel(v) }}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {MODEL_OPTIONS[aiProvider].map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      <span className="flex flex-col items-start">
+                        <span>{m.label}</span>
+                        <span className="text-xs text-muted-foreground">{m.hint}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                  {/* A model set through the API, or one since dropped from the
+                      list, would otherwise vanish from the trigger on open. */}
+                  {!isKnownModel(aiProvider, aiModel) && aiModel && (
+                    <SelectItem value={aiModel}>{aiModel}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Applies to extraction, contract Q&amp;A, risk scoring and clause
+                explanations for this organization. Larger models cost more per
+                contract.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -487,7 +689,11 @@ export default function OrgSettingsPage() {
                     const res = await fetch("/api/org/ai-config", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ provider: aiProvider, apiKey: aiApiKey.trim() }),
+                      body: JSON.stringify({
+                        provider: aiProvider,
+                        apiKey: aiApiKey.trim(),
+                        model: aiModel,
+                      }),
                     })
                     if (!res.ok) throw new Error("Save failed")
                     const data = (await res.json()) as { provider: string; model: string | null }
