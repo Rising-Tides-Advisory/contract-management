@@ -42,6 +42,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   fireAndLog(
     sendInvitationEmail({
+      organizationId: ctx.organizationId,
       to: invitation.email,
       organizationName: org?.name ?? "your organization",
       inviterName: inviter?.name ?? inviter?.email ?? "A teammate",

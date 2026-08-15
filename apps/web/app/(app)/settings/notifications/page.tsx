@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
+import { EmailConfigSection } from "@/components/settings/email-config-section"
 import {
   Dialog,
   DialogContent,
@@ -257,6 +258,8 @@ export default function NotificationsSettingsPage() {
           Configure how your organization receives contract lifecycle events
         </p>
       </div>
+
+      <EmailConfigSection isAdmin={isAdmin} />
 
       <section className="space-y-3">
         <div className="flex items-end justify-between">

@@ -18,7 +18,10 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     async sendResetPassword({ user, url }) {
-      if (!isEmailConfigured()) return // silently skip if email is not configured
+      // Password reset is system mail: the user is not authenticated yet and may
+      // belong to several orgs, so there is no org to attribute it to. It always
+      // uses the server-level config, hence the env-only guard here.
+      if (!isEmailConfigured()) return
       await sendEmail({
         to: user.email,
         subject: "[Aakd] Reset your password",
@@ -43,6 +46,7 @@ export const auth = betterAuth({
         const baseUrl = process.env.BETTER_AUTH_URL ?? "http://localhost:3000"
         const acceptUrl = `${baseUrl}/accept-invitation?id=${data.id}`
         await sendInvitationEmail({
+          organizationId: data.organization.id,
           to: data.email,
           organizationName: data.organization.name,
           inviterName: data.inviter.user.name ?? data.inviter.user.email ?? "A teammate",

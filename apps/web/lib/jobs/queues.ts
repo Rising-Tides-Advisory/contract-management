@@ -58,6 +58,8 @@ export type EmailJobData =
   | { kind: "alert"; alertId: string }
   | {
       kind: "approval_request"
+      /** Optional: older queued jobs lack it and fall back to server email config. */
+      organizationId?: string
       to: string
       assigneeName: string
       requesterName: string
@@ -66,6 +68,8 @@ export type EmailJobData =
     }
   | {
       kind: "approval_rejected"
+      /** Optional: older queued jobs lack it and fall back to server email config. */
+      organizationId?: string
       to: string
       requesterName: string
       reviewerName: string

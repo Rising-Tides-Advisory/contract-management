@@ -695,7 +695,11 @@ export default function IntegrationsPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-7 py-5 max-w-2xl">
+      {/* Full width: the category tab bar has six entries and does not fit in a
+          constrained column — at max-w-2xl it overflowed into a horizontal
+          scrollbar. CategoryTabs keeps its own overflow-x-auto so narrow
+          viewports still scroll rather than clip. */}
+      <div className="flex-1 overflow-y-auto px-7 py-5">
         {/* ── Category tabs ────────────────────────────────────────── */}
         <CategoryTabs active={activeCategory} onChange={setActiveCategory} />
 

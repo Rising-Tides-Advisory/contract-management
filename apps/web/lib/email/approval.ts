@@ -1,6 +1,8 @@
-import { isEmailConfigured, sendEmail } from "@/lib/email/transport"
+import { sendEmail } from "@/lib/email/transport"
 
 interface ApprovalRequestEmailParams {
+  /** Sends through this org's Postmark config when it has one. */
+  organizationId?: string
   to: string
   assigneeName: string
   requesterName: string
@@ -47,10 +49,8 @@ function buildApprovalRequestHtml(params: ApprovalRequestEmailParams): string {
 }
 
 export async function sendApprovalRequestEmail(params: ApprovalRequestEmailParams): Promise<void> {
-  // Silently skip if email delivery is not configured
-  if (!isEmailConfigured()) return
-
   await sendEmail({
+    organizationId: params.organizationId,
     to: params.to,
     subject: `[Aakd] Approval requested — ${params.contractTitle}`,
     html: buildApprovalRequestHtml(params),
@@ -60,6 +60,8 @@ export async function sendApprovalRequestEmail(params: ApprovalRequestEmailParam
 // ─── Approval Rejection Email ─────────────────────────────────────────────────
 
 interface ApprovalRejectionEmailParams {
+  /** Sends through this org's Postmark config when it has one. */
+  organizationId?: string
   to: string
   requesterName: string
   reviewerName: string
@@ -98,9 +100,8 @@ function buildApprovalRejectionHtml(params: ApprovalRejectionEmailParams): strin
 }
 
 export async function sendApprovalRejectionEmail(params: ApprovalRejectionEmailParams): Promise<void> {
-  if (!isEmailConfigured()) return
-
   await sendEmail({
+    organizationId: params.organizationId,
     to: params.to,
     subject: `[Aakd] Approval rejected — ${params.contractTitle}`,
     html: buildApprovalRejectionHtml(params),
