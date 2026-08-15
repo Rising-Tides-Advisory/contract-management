@@ -250,10 +250,22 @@ fly secrets set DATABASE_URL=... REDIS_URL=... NOTIFICATION_ENCRYPTION_KEY=...
 fly deploy -c fly.toml
 ```
 
-**Railway / Render** — create a service from this repo, set the Dockerfile path to
-`apps/web/Dockerfile.worker` and the build context to the repo root, add the same
-env vars, and disable any HTTP health check: the worker never opens a port, so a
-port-based check will restart it forever.
+**Railway** — `railway.json` in the repo root already selects the Dockerfile builder,
+pins the worker Dockerfile, and sets an always-on restart policy, so a service created
+from this repo picks it up with no further build configuration. Leave the service's
+**root directory** at the repo root: the Dockerfile copies from `apps/web/` and
+`worker/`, so a narrower context fails to build. Add the env vars below, and leave the
+health check unset — the worker never opens a port, so a port-based check restarts it
+forever. Railway redeploys on every push to `main`, which is the point: the worker
+cannot fall behind the app.
+
+If you later run a second Railway service from this repo, point that one at its own
+config with **Settings → Config-as-code → Config file path**, since a bare
+`railway.json` at the root applies to every service that does not override it.
+
+**Render** — create a Background Worker from this repo with the Dockerfile path set to
+`apps/web/Dockerfile.worker` and the build context at the repo root, add the same env
+vars, and leave the health check unset for the same reason.
 
 **Any VM with Docker** —
 
