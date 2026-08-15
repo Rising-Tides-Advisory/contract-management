@@ -81,6 +81,7 @@ import type { Obligation } from "@/components/obligations/types"
 import { EditorTab } from "@/components/editor/editor-tab"
 import { ContractCrmSection } from "@/components/crm/contract-crm-section"
 import { Contract, ContractFile, Activity, ContractStatus, ContractAlert, Tag, Approval, OrgMember, SigningStatus } from "@/lib/types"
+import { DocumentViewerDialog } from "@/components/contracts/document-viewer-dialog"
 import { cn } from "@/lib/utils"
 
 interface AIExtraction {
@@ -277,6 +278,7 @@ export default function ContractDetailPage() {
 
   const [contract, setContract] = useState<Contract | null>(null)
   const [files, setFiles] = useState<ContractFile[]>([])
+  const [viewerFile, setViewerFile] = useState<ContractFile | null>(null)
   const [activities, setActivities] = useState<Activity[]>([])
   const [alerts, setAlerts] = useState<ContractAlert[]>([])
   const [extractions, setExtractions] = useState<AIExtraction[]>([])
@@ -516,17 +518,6 @@ export default function ContractDetailPage() {
       fetchContract()
     } catch {
       toast.error("Failed to delete file")
-    }
-  }
-
-  async function previewFile(fileId: string) {
-    try {
-      const res = await fetch(`/api/contracts/${id}/upload?fileId=${fileId}`)
-      if (!res.ok) throw new Error("Preview failed")
-      const { url } = await res.json()
-      window.open(url, "_blank", "noopener,noreferrer")
-    } catch {
-      toast.error("Failed to open preview")
     }
   }
 
@@ -1276,8 +1267,8 @@ export default function ContractDetailPage() {
                             variant="ghost"
                             size="sm"
                             className="size-8 p-0 text-muted-foreground hover:text-foreground"
-                            onClick={() => previewFile(f.id)}
-                            title="Preview"
+                            onClick={() => setViewerFile(f)}
+                            title="Read document and set dates"
                           >
                             <ExternalLink className="size-4" />
                           </Button>
@@ -2216,6 +2207,16 @@ export default function ContractDetailPage() {
 
         </DialogContent>
       </Dialog>
+
+      <DocumentViewerDialog
+        contractId={id}
+        file={viewerFile}
+        open={viewerFile !== null}
+        onOpenChange={(open) => { if (!open) setViewerFile(null) }}
+        startDate={contract?.startDate}
+        endDate={contract?.endDate}
+        onSaved={() => { setViewerFile(null); fetchContract() }}
+      />
     </div>
   )
 }
