@@ -12,6 +12,7 @@ import {
   Upload,
   Bell,
   Mail,
+  ShieldCheck,
   User,
 } from "lucide-react"
 import { LocaleSwitcher } from "@/components/locale-switcher"
@@ -49,6 +50,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       title: t("sections.integrations"),
       items: [
         { label: t("integrations"),  href: "/settings/integrations", icon: Plug2 },
+        { label: t("entra"),         href: "/settings/entra",        icon: ShieldCheck },
         { label: t("import"),        href: "/settings/import",       icon: Upload },
       ],
     },

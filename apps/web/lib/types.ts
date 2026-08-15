@@ -44,6 +44,19 @@ export type ActivityAction =
   | "TAGGED"
   | "APPROVAL_CANCELLED"
 
+/** A person from the organization's synced Microsoft Entra ID directory. */
+export interface EntraDirectoryPerson {
+  id: string
+  displayName: string
+  mail: string | null
+  userPrincipalName: string
+  jobTitle: string | null
+  department: string | null
+  accountEnabled: boolean
+  /** Set when this person also has a ClauseFlow account. */
+  userId?: string | null
+}
+
 export interface Contract {
   id: string
   title: string
@@ -51,6 +64,9 @@ export interface Contract {
   status: ContractStatus
   ownerId: string
   owner?: { id: string; name: string; email: string; image?: string | null }
+  /** Entra directory person accountable for this contract; drives notifications. */
+  responsiblePartyId?: string | null
+  responsibleParty?: EntraDirectoryPerson | null
   counterpartyName?: string | null
   counterpartyContact?: string | null
   value?: number | null

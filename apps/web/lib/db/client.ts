@@ -21,7 +21,15 @@ const ORG_SCOPED_MODELS = new Set([
   "CrmIntegration",
   // M10: Import / migration tools
   "ImportJob",
+  // Entra: the synced tenant directory. Every read is inside an org context.
+  "EntraDirectoryUser",
 ])
+
+// EntraIntegration is deliberately NOT org-scoped. Home-realm discovery runs
+// before the user has a session — it looks the integration up by email domain
+// or tenant id precisely to *find out* which org they belong to, so there is
+// no organizationId to inject yet. Every org-facing Entra route instead filters
+// on `organizationId: ctx.organizationId` explicitly against the unique index.
 
 type ScopedQueryArgs = {
   where?: Record<string, unknown>

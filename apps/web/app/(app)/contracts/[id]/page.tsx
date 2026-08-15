@@ -80,6 +80,7 @@ import { ObligationList } from "@/components/obligations/obligation-list"
 import type { Obligation } from "@/components/obligations/types"
 import { EditorTab } from "@/components/editor/editor-tab"
 import { ContractCrmSection } from "@/components/crm/contract-crm-section"
+import { ResponsiblePartyPicker } from "@/components/contracts/responsible-party-picker"
 import { Contract, ContractFile, Activity, ContractStatus, ContractAlert, Tag, Approval, OrgMember, SigningStatus } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -990,6 +991,18 @@ export default function ContractDetailPage() {
                       <p className="text-[13px] font-medium">{contract.owner.name}</p>
                     </div>
                   )}
+                  <ResponsiblePartyPicker
+                    contractId={contract.id}
+                    value={contract.responsibleParty}
+                    canEdit={canManage}
+                    onChange={(person) =>
+                      setContract((c) =>
+                        c
+                          ? { ...c, responsibleParty: person, responsiblePartyId: person?.id ?? null }
+                          : c,
+                      )
+                    }
+                  />
                   {contract.contractType && (
                     <div>
                       <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Type</p>
