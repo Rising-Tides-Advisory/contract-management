@@ -111,7 +111,7 @@ export default function MembersPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     const controller = new AbortController()

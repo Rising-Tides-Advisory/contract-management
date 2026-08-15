@@ -23,7 +23,7 @@
 
 import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
-import { dirname, join, delimiter } from "node:path"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const SKIP = process.env.SKIP_BUILD_MIGRATE
@@ -69,27 +69,32 @@ if (!DIRECT_URL) {
   process.exit(1)
 }
 
-// Resolve the Prisma CLI explicitly rather than trusting PATH. Package-manager
-// scripts add node_modules/.bin, but this script must not depend on how it was
-// invoked — a missing binary would otherwise read as a migration failure.
+// Resolve the Prisma CLI to an absolute path rather than trusting PATH.
+// Package-manager scripts add node_modules/.bin, but this script must not depend
+// on how it was invoked — a missing binary would otherwise read as a migration
+// failure. Resolving it here also means we can spawn without a shell.
 const webRoot = dirname(dirname(fileURLToPath(import.meta.url)))
-const binDirs = [
-  join(webRoot, "node_modules", ".bin"),
-  join(webRoot, "..", "..", "node_modules", ".bin"),
-].filter((d) => existsSync(d))
+const prismaBin = [
+  join(webRoot, "node_modules", ".bin", "prisma"),
+  join(webRoot, "..", "..", "node_modules", ".bin", "prisma"),
+].find((p) => existsSync(p))
+
+if (!prismaBin) {
+  console.error(
+    "[build-migrate] Could not find the Prisma CLI in node_modules/.bin.\n" +
+      "  Looked in the web workspace and the monorepo root. Dependencies may not\n" +
+      "  have been installed before the build script ran.",
+  )
+  process.exit(1)
+}
 
 // Never log the URL itself — it carries the database password.
 console.log("[build-migrate] Applying pending migrations to the production database…")
 
-const result = spawnSync("prisma", ["migrate", "deploy"], {
+const result = spawnSync(prismaBin, ["migrate", "deploy"], {
   stdio: "inherit",
   cwd: webRoot,
-  env: {
-    ...process.env,
-    DIRECT_URL,
-    PATH: [...binDirs, process.env.PATH].filter(Boolean).join(delimiter),
-  },
-  shell: true,
+  env: { ...process.env, DIRECT_URL },
 })
 
 if (result.status !== 0) {

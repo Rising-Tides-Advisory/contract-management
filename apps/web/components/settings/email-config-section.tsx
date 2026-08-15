@@ -52,7 +52,9 @@ export function EmailConfigSection({ isAdmin }: { isAdmin: boolean }) {
   }, [])
 
   async function save() {
-    if (!serverToken.trim()) {
+    // A blank token on an already-configured org means "keep the stored one",
+    // so only require it the first time.
+    if (!serverToken.trim() && !config?.hasToken) {
       toast.error("Enter your Postmark server token")
       return
     }
@@ -66,7 +68,7 @@ export function EmailConfigSection({ isAdmin }: { isAdmin: boolean }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          serverToken: serverToken.trim(),
+          serverToken: serverToken.trim() || undefined,
           fromAddress: fromAddress.trim(),
           messageStream: messageStream.trim() || undefined,
         }),
@@ -145,11 +147,21 @@ export function EmailConfigSection({ isAdmin }: { isAdmin: boolean }) {
                 id="pm-token"
                 type="password"
                 autoComplete="off"
-                placeholder="Postmark → Servers → API Tokens"
+                placeholder={
+                  config?.hasToken
+                    ? "Leave blank to keep the stored token"
+                    : "Postmark → Servers → API Tokens"
+                }
                 value={serverToken}
                 onChange={(e) => setServerToken(e.target.value)}
                 disabled={!isAdmin || saving}
               />
+              {config?.hasToken && (
+                <p className="text-xs text-muted-foreground">
+                  A token is already stored. Leave this blank to change only the
+                  From address or stream.
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">

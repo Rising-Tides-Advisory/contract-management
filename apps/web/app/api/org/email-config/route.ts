@@ -20,7 +20,12 @@ import { logger } from "@/lib/logger"
 import { z } from "zod"
 
 const UpsertSchema = z.object({
-  serverToken: z.string().min(1),
+  // Optional so the From address or message stream can be corrected without
+  // re-pasting the token — GET never returns it, so requiring it here meant a
+  // typo in the From address could only be fixed by fetching the token out of
+  // Postmark again. Omitting it keeps the stored one; it is still required
+  // when no config exists yet, which POST checks.
+  serverToken: z.string().min(1).optional(),
   // Postmark rejects any From address that is not a confirmed Sender Signature
   // or on a verified domain, so this is validated as an address but can only
   // really be checked by sending.
@@ -82,32 +87,53 @@ export async function POST(req: Request) {
 
   const { serverToken, fromAddress, messageStream } = parsed.data
 
-  let encryptedToken: string
-  try {
-    encryptedToken = encrypt(serverToken)
-  } catch (err) {
-    logger.error({ err }, "[email-config] encryption failed")
+  const existing = await prisma.orgEmailConfig.findUnique({
+    where: { organizationId: ctx.organizationId },
+    select: { organizationId: true },
+  })
+
+  if (!serverToken && !existing) {
     return Response.json(
-      { error: "Encryption not configured on this server" },
-      { status: 500 },
+      { error: "A Postmark server token is required" },
+      { status: 400 },
     )
   }
 
-  const config = await prisma.orgEmailConfig.upsert({
-    where: { organizationId: ctx.organizationId },
-    create: {
-      organizationId: ctx.organizationId,
-      encryptedToken,
-      fromAddress,
-      messageStream: messageStream ?? null,
-    },
-    update: {
-      encryptedToken,
-      fromAddress,
-      messageStream: messageStream ?? null,
-    },
-    select: { fromAddress: true, messageStream: true },
-  })
+  let encryptedToken: string | undefined
+  if (serverToken) {
+    try {
+      encryptedToken = encrypt(serverToken)
+    } catch (err) {
+      logger.error({ err }, "[email-config] encryption failed")
+      return Response.json(
+        { error: "Encryption not configured on this server" },
+        { status: 500 },
+      )
+    }
+  }
+
+  const config = encryptedToken
+    ? await prisma.orgEmailConfig.upsert({
+        where: { organizationId: ctx.organizationId },
+        create: {
+          organizationId: ctx.organizationId,
+          encryptedToken,
+          fromAddress,
+          messageStream: messageStream ?? null,
+        },
+        update: {
+          encryptedToken,
+          fromAddress,
+          messageStream: messageStream ?? null,
+        },
+        select: { fromAddress: true, messageStream: true },
+      })
+    : // No new token — leave encryptedToken untouched.
+      await prisma.orgEmailConfig.update({
+        where: { organizationId: ctx.organizationId },
+        data: { fromAddress, messageStream: messageStream ?? null },
+        select: { fromAddress: true, messageStream: true },
+      })
 
   return Response.json(
     {

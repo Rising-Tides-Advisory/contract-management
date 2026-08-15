@@ -95,6 +95,13 @@ export default function OrgSettingsPage() {
     if (activeOrg?.name) setName(activeOrg.name)
   }, [activeOrg])
 
+  // A stored key can be reused only for the provider it belongs to, so
+  // switching providers still requires a new one.
+  const canKeepStoredKey =
+    aiStatus?.hasKey === true &&
+    aiStatus.source === "org" &&
+    aiStatus.provider === aiProvider
+
   function openAiForm() {
     const provider = aiStatus?.provider === "openai" ? "openai" : "anthropic"
     setAiProvider(provider)
@@ -617,7 +624,13 @@ export default function OrgSettingsPage() {
                 <Input
                   id="ai-key-settings"
                   type={showAiKey ? "text" : "password"}
-                  placeholder={aiProvider === "anthropic" ? "sk-ant-api03-..." : "sk-proj-..."}
+                  placeholder={
+                    canKeepStoredKey
+                      ? "Leave blank to keep the stored key"
+                      : aiProvider === "anthropic"
+                        ? "sk-ant-api03-..."
+                        : "sk-proj-..."
+                  }
                   value={aiApiKey}
                   onChange={(e) => {
                     setAiApiKey(e.target.value)
@@ -647,6 +660,12 @@ export default function OrgSettingsPage() {
               {aiConfigStatus === "tested-fail" && (
                 <p className="flex items-center gap-1.5 text-sm text-destructive">
                   <XCircle className="h-4 w-4 shrink-0" /> {aiConfigError || "Validation failed"}
+                </p>
+              )}
+              {canKeepStoredKey && (
+                <p className="text-xs text-muted-foreground">
+                  A key is already stored. Leave this blank to change only the
+                  model.
                 </p>
               )}
             </div>
@@ -682,7 +701,11 @@ export default function OrgSettingsPage() {
               <Button
                 type="button"
                 size="sm"
-                disabled={!aiApiKey.trim() || aiConfigStatus === "testing" || aiConfigStatus === "saving"}
+                disabled={
+                  (!aiApiKey.trim() && !canKeepStoredKey) ||
+                  aiConfigStatus === "testing" ||
+                  aiConfigStatus === "saving"
+                }
                 onClick={async () => {
                   setAiConfigStatus("saving")
                   try {
@@ -691,20 +714,29 @@ export default function OrgSettingsPage() {
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
                         provider: aiProvider,
-                        apiKey: aiApiKey.trim(),
+                        // Omitted entirely when blank — the server keeps the
+                        // stored key rather than overwriting it with nothing.
+                        apiKey: aiApiKey.trim() || undefined,
                         model: aiModel,
                       }),
                     })
-                    if (!res.ok) throw new Error("Save failed")
+                    if (!res.ok) {
+                      const err = (await res.json().catch(() => ({}))) as { error?: unknown }
+                      throw new Error(
+                        typeof err.error === "string" ? err.error : "Save failed",
+                      )
+                    }
                     const data = (await res.json()) as { provider: string; model: string | null }
                     setAiStatus({ provider: data.provider, model: data.model, hasKey: true, source: "org" })
                     setShowAiForm(false)
                     setAiApiKey("")
                     setAiConfigStatus("idle")
                     toast.success("AI key saved")
-                  } catch {
+                  } catch (err) {
                     setAiConfigStatus("tested-fail")
-                    setAiConfigError("Failed to save")
+                    setAiConfigError(
+                      err instanceof Error && err.message ? err.message : "Failed to save",
+                    )
                   }
                 }}
               >

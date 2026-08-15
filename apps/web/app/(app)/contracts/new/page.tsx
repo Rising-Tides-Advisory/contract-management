@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, DragEvent, ChangeEvent } from "react"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowLeft, Upload, Sparkles, FileText, Loader2 } from "lucide-react"
+import { ArrowLeft, Upload, Sparkles, FileText, Loader2, Eye } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { UploadPreviewDialog } from "@/components/contracts/upload-preview-dialog"
 import { cn } from "@/lib/utils"
 import { currencyLabel, isCurrencyCode, type OrgCurrencySettings } from "@/lib/currencies"
 import { useOrgCurrencies, pickerOptions } from "@/lib/use-org-currencies"
@@ -66,6 +67,9 @@ interface ExtractionResult {
   autoRenewal?: boolean
   description?: string | null
   confidence?: Record<string, number>
+  /** Text the route read out of the document, for the preview dialog. */
+  documentText?: string | null
+  documentTextTruncated?: boolean
   error?: string
   partial?: boolean
 }
@@ -258,6 +262,8 @@ function ExtractingScreen() {
 
 function ReviewScreen({
   file,
+  documentText,
+  documentTextTruncated,
   formData,
   confidence,
   submitting,
@@ -269,6 +275,8 @@ function ReviewScreen({
   currencies,
 }: {
   file: File
+  documentText: string | null
+  documentTextTruncated: boolean
   formData: FormData
   confidence: Record<string, number>
   submitting: boolean
@@ -280,6 +288,7 @@ function ReviewScreen({
   onChangeFile: () => void
 }) {
   const t = useTranslations("contract.types")
+  const [previewOpen, setPreviewOpen] = useState(false)
   const CONTRACT_TYPES = [
     { value: "NDA",        label: t("NDA") },
     { value: "MSA",        label: t("MSA") },
@@ -365,9 +374,23 @@ function ReviewScreen({
 
           {/* Timeline */}
           <section className="rounded-xl border border-border bg-card p-6 space-y-4">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Timeline
-            </h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Timeline
+              </h3>
+              {/* Dates are the fields AI misses most, so the document is one
+                  click away from them rather than only from the file card. */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setPreviewOpen(true)}
+              >
+                <Eye className="size-3.5" />
+                Find dates in document
+              </Button>
+            </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
@@ -520,16 +543,39 @@ function ReviewScreen({
               </span>
             </div>
             <p className="text-xs text-muted-foreground">{formatFileSize(file.size)}</p>
-            <button
-              type="button"
-              onClick={onChangeFile}
-              className="text-xs text-primary underline hover:no-underline"
-            >
-              Change file
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(true)}
+                className="text-xs text-primary underline hover:no-underline"
+              >
+                Preview
+              </button>
+              <button
+                type="button"
+                onClick={onChangeFile}
+                className="text-xs text-primary underline hover:no-underline"
+              >
+                Change file
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      <UploadPreviewDialog
+        file={file}
+        documentText={documentText}
+        documentTextTruncated={documentTextTruncated}
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        startDate={formData.startDate}
+        endDate={formData.endDate}
+        onApply={({ startDate, endDate }) => {
+          onFormChange("startDate", startDate)
+          onFormChange("endDate", endDate)
+        }}
+      />
 
       {/* ---- Bottom action bar ---- */}
       <div className="fixed bottom-0 left-0 right-0 z-10 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -566,6 +612,8 @@ export default function NewContractPage() {
   const [formData, setFormData] = useState<FormData>(defaultFormData)
   const currencies = useOrgCurrencies()
   const [confidence, setConfidence] = useState<Record<string, number>>({})
+  const [documentText, setDocumentText] = useState<string | null>(null)
+  const [documentTextTruncated, setDocumentTextTruncated] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   function updateField(key: keyof FormData, value: string) {
@@ -610,6 +658,8 @@ export default function NewContractPage() {
         description: extracted.description ?? "",
       })
       setConfidence(extracted.confidence ?? {})
+      setDocumentText(extracted.documentText || null)
+      setDocumentTextTruncated(Boolean(extracted.documentTextTruncated))
 
       if (extracted.error) {
         toast.warning(
@@ -626,6 +676,8 @@ export default function NewContractPage() {
         title: titleCaseFromFilename(fileNameWithoutExt),
       }))
       setConfidence({})
+      setDocumentText(null)
+      setDocumentTextTruncated(false)
     }
 
     setPageState("review")
@@ -635,6 +687,8 @@ export default function NewContractPage() {
     setFile(null)
     setFormData(defaultFormData)
     setConfidence({})
+    setDocumentText(null)
+    setDocumentTextTruncated(false)
     setPageState("upload")
   }
 
@@ -761,6 +815,8 @@ export default function NewContractPage() {
       {pageState === "review" && file && (
         <ReviewScreen
           file={file}
+          documentText={documentText}
+          documentTextTruncated={documentTextTruncated}
           formData={formData}
           confidence={confidence}
           submitting={submitting}

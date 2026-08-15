@@ -139,8 +139,10 @@ export async function POST(req: Request): Promise<Response> {
   const fileNameWithoutExt = fileField.name.replace(/\.[^.]+$/, "")
 
   let contractText = ""
+  let textTruncated = false
   try {
     const raw = await extractText(buffer, fileType)
+    textTruncated = raw.length > MAX_TEXT_CHARS
     contractText = raw.slice(0, MAX_TEXT_CHARS)
   } catch (err) {
     logger.error({ err }, "[extract-preview] text extraction failed")
@@ -152,6 +154,13 @@ export async function POST(req: Request): Promise<Response> {
     })
   }
 
+  // The text goes back with the result so the wizard can show the document
+  // beside the fields it just pre-filled. DOCX has no browser renderer, so this
+  // is the only thing it has to display; it is already capped at
+  // MAX_TEXT_CHARS, which keeps the response small enough to be worth sending
+  // unconditionally rather than making the client ask for it separately.
+  const documentText = { documentText: contractText, documentTextTruncated: textTruncated }
+
   try {
     const extracted = await runAiExtraction(contractText, ctx.organizationId)
     if (!extracted.error) {
@@ -159,7 +168,7 @@ export async function POST(req: Request): Promise<Response> {
         organizationId: ctx.organizationId,
       })
     }
-    return Response.json(extracted)
+    return Response.json({ ...extracted, ...documentText })
   } catch (err) {
     logger.error({ err }, "[extract-preview] AI extraction failed")
     return Response.json({
@@ -167,6 +176,7 @@ export async function POST(req: Request): Promise<Response> {
       error: "ai_unavailable",
       partial: true,
       confidence: {},
+      ...documentText,
     })
   }
 }

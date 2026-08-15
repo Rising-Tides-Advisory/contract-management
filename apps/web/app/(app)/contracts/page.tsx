@@ -139,7 +139,7 @@ export default function ContractsPage() {
         setLoading(false)
       }
     },
-    [debouncedSearch, activeFilter, page],
+    [debouncedSearch, activeFilter, page, t],
   )
 
   useEffect(() => {
