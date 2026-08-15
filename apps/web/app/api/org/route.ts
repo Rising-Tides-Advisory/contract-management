@@ -5,12 +5,39 @@ import { requireRole } from "@/lib/auth/roles"
 import { z } from "zod"
 import { CurrencyCodeSchema, readCurrencySettings } from "@/lib/currencies"
 
+/**
+ * A logo is either an absolute http(s) URL (an external CDN) or a root-relative
+ * path served by this app.
+ *
+ * POST /api/org/logo returns the latter — `/api/org/logo?key=...` — because the
+ * object lives in private storage and is streamed back through an authenticated
+ * route rather than exposed publicly. `z.string().url()` rejects that, so
+ * uploading a logo and pressing Save failed with a 422 the UI surfaced as
+ * "Failed to update organization".
+ *
+ * Protocol-relative ("//evil.com") and non-http schemes are still rejected —
+ * this value is rendered straight into an <img src>.
+ */
+const LogoUrlSchema = z.string().max(2048).refine(
+  (value) => {
+    if (value.startsWith("//")) return false
+    if (value.startsWith("/")) return true
+    try {
+      const { protocol } = new URL(value)
+      return protocol === "http:" || protocol === "https:"
+    } catch {
+      return false
+    }
+  },
+  { message: "Must be an absolute http(s) URL or a root-relative path" },
+)
+
 const UpdateOrgSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   domain: z.string().max(200).optional(),
   timezone: z.string().max(100).optional(),
   industry: z.string().max(100).optional(),
-  logo: z.string().url().optional().nullable(),
+  logo: LogoUrlSchema.optional().nullable(),
   enabledCurrencies: z.array(CurrencyCodeSchema).min(1).max(60).optional(),
   defaultCurrency: CurrencyCodeSchema.optional(),
 })

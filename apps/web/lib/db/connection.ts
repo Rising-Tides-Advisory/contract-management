@@ -22,9 +22,45 @@
  */
 import { env, isServerless } from "@/lib/env"
 
+/**
+ * SSL modes that `pg` currently treats as aliases for `verify-full`.
+ *
+ * `pg` 8 verifies the certificate chain AND the hostname for all three, but
+ * warns on every parse that `pg-connection-string` v3 / `pg` v9 will switch them
+ * to libpq semantics — under which `require` encrypts without verifying anything,
+ * silently downgrading a Neon or Supabase connection from authenticated TLS to
+ * one that a man-in-the-middle can terminate.
+ *
+ * Rewriting them to an explicit `verify-full` is a no-op against `pg` 8 and
+ * pins the strong behaviour across that upgrade. Anything else — including a URL
+ * with no `sslmode` (plain local Postgres) or one that opted into libpq
+ * semantics with `uselibpqcompat` — is left exactly as written.
+ */
+const ALIASED_SSL_MODES = new Set(["prefer", "require", "verify-ca"])
+
+export function pinSslVerification(url: string): string {
+  if (!url) return url
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return url // not a URL we can reason about — hand it through untouched
+  }
+
+  if (parsed.searchParams.has("uselibpqcompat")) return url
+
+  const mode = parsed.searchParams.get("sslmode")
+  if (!mode || !ALIASED_SSL_MODES.has(mode)) return url
+
+  parsed.searchParams.set("sslmode", "verify-full")
+  return parsed.toString()
+}
+
 /** Pooled connection string — used for all runtime queries. */
 export function getDatabaseUrl(): string {
-  return env("DATABASE_URL", "POSTGRES_PRISMA_URL", "POSTGRES_URL") ?? ""
+  return pinSslVerification(
+    env("DATABASE_URL", "POSTGRES_PRISMA_URL", "POSTGRES_URL") ?? "",
+  )
 }
 
 /**
@@ -33,10 +69,8 @@ export function getDatabaseUrl(): string {
  * are the same thing) keeps working with no extra configuration.
  */
 export function getDirectDatabaseUrl(): string {
-  return (
-    env("DIRECT_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL_NON_POOLING") ??
-    getDatabaseUrl()
-  )
+  const direct = env("DIRECT_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL_NON_POOLING")
+  return direct ? pinSslVerification(direct) : getDatabaseUrl()
 }
 
 /**

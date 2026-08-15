@@ -24,7 +24,24 @@ const nextConfig = {
     outputFileTracingRoot: path.join(__dirname, "../../"),
     // pdf-parse v1 runs a test file on import — keep it out of the Next.js
     // bundle so it loads at runtime via Node.js require, not at build time.
-    serverComponentsExternalPackages: ["pdf-parse"],
+    // Packages that must be require()d at runtime rather than bundled.
+    //   pdf-parse   v1 runs a test file on import — keep it out of the bundle
+    //               so it loads at runtime via Node.js require, not at build.
+    //   OTel        auto-instrumentation works by hooking module loads, which
+    //               bundling defeats outright. Bundling it also drags gRPC,
+    //               protobufjs and every optional log-transport into the graph,
+    //               each contributing "Critical dependency" or unresolved-module
+    //               build warnings for code that never runs unless OTEL_ENABLED.
+    //   bullmq      resolves sandboxed processor paths dynamically, which
+    //               webpack cannot follow and reports as a critical dependency.
+    serverComponentsExternalPackages: [
+      "pdf-parse",
+      "@opentelemetry/sdk-node",
+      "@opentelemetry/auto-instrumentations-node",
+      "@opentelemetry/exporter-trace-otlp-http",
+      "@opentelemetry/instrumentation",
+      "bullmq",
+    ],
     // Never serve a stale RSC payload for dynamic pages (those that use
     // cookies/headers or cache:'no-store').  Without this, the client-side
     // Router Cache re-uses the last render for ~30 s, so the dashboard shows
@@ -46,7 +63,12 @@ export default withSentryConfig(
     widenClientFileUpload: true,
     tunnelRoute: "/monitoring",
     hideSourceMaps: true,
-    disableLogger: true,
-    automaticVercelMonitors: true,
+    // `disableLogger` and `automaticVercelMonitors` moved under `webpack` in
+    // @sentry/nextjs 10; the top-level spellings are deprecated and warn on
+    // every build.
+    webpack: {
+      treeshake: { removeDebugLogging: true },
+      automaticVercelMonitors: true,
+    },
   },
 )
