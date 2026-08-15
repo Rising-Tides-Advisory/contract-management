@@ -3,6 +3,7 @@ import { organization } from "better-auth/plugins"
 import { prismaAdapter } from "better-auth/adapters/prisma"
 import { prisma } from "@/lib/db/client"
 import { sendInvitationEmail } from "@/lib/email/invitation"
+import { isEmailConfigured, sendEmail } from "@/lib/email/transport"
 import { logger } from "@/lib/logger"
 
 const authOrigin = process.env.BETTER_AUTH_URL ?? "http://localhost:3000"
@@ -17,18 +18,8 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     async sendResetPassword({ user, url }) {
-      if (!process.env.SMTP_HOST) return // silently skip if SMTP not configured
-      const nodemailer = await import("nodemailer")
-      const transporter = nodemailer.default.createTransport({
-        host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT ?? 587),
-        secure: process.env.SMTP_SECURE === "true",
-        auth: process.env.SMTP_USER
-          ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-          : undefined,
-      })
-      await transporter.sendMail({
-        from: process.env.SMTP_FROM ?? "noreply@aakd.io",
+      if (!isEmailConfigured()) return // silently skip if email is not configured
+      await sendEmail({
         to: user.email,
         subject: "[Aakd] Reset your password",
         html: `

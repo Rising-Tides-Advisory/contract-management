@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer"
+import { isEmailConfigured, sendEmail } from "@/lib/email/transport"
 import {
   HUMAN_EVENT_LABELS,
   type NotificationEventName,
@@ -122,21 +122,10 @@ function buildEventHtml(params: EventNotificationEmailParams, appUrl: string): s
 </html>`.trim()
 }
 
-function getTransporter() {
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? "localhost",
-    port: Number(process.env.SMTP_PORT ?? 587),
-    secure: process.env.SMTP_SECURE === "true",
-    auth: process.env.SMTP_USER
-      ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-      : undefined,
-  })
-}
-
 export async function sendEventNotificationEmail(
   params: EventNotificationEmailParams,
 ): Promise<void> {
-  if (!process.env.SMTP_HOST) return
+  if (!isEmailConfigured()) return
 
   const appUrl =
     process.env.NEXT_PUBLIC_APP_URL ??
@@ -146,11 +135,5 @@ export async function sendEventNotificationEmail(
   const label = eventLabel(params.eventName)
   const subject = `[Aakd] ${label} — ${params.contractTitle}`
 
-  const transporter = getTransporter()
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM ?? "noreply@aakd.io",
-    to: params.to,
-    subject,
-    html: buildEventHtml(params, appUrl),
-  })
+  await sendEmail({ to: params.to, subject, html: buildEventHtml(params, appUrl) })
 }

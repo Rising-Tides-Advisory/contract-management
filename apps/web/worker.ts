@@ -39,6 +39,7 @@ import { generateEmbedding, currentEmbeddingModel } from "@/lib/embedding"
 // getSubmission and isAllowedDocuSealUrl moved to worker/jobs/signing-sync.ts
 import { chunkText } from "@/lib/ai/chunking"
 import { sendAlertEmailById } from "@/lib/email"
+import { isEmailConfigured } from "@/lib/email/transport"
 import { sendApprovalRequestEmail, sendApprovalRejectionEmail } from "@/lib/email/approval"
 import { sendEventNotificationEmail } from "@/lib/email/event-notification"
 import { sendSlackEvent, sendTeamsEvent } from "@/lib/notifications/webhooks"
@@ -2271,10 +2272,10 @@ const _provider = process.env.AI_PROVIDER?.toLowerCase() || (
     : "none"
 )
 logger.info({ provider: _provider }, "[worker] AI provider")
-if (!process.env.SMTP_HOST) {
+if (!isEmailConfigured()) {
   logger.warn(
-    "[worker] SMTP_HOST is not set — reminder and alert emails will be silently skipped. " +
+    "[worker] Email is not configured — reminder and alert emails will be silently skipped. " +
     "In-app notifications and Slack/Teams will still fire. " +
-    "Set SMTP_HOST (+ SMTP_USER, SMTP_PASS) in .env.local to enable email delivery.",
+    "Set POSTMARK_SERVER_TOKEN (or SMTP_HOST + SMTP_USER/SMTP_PASS) to enable email delivery.",
   )
 }

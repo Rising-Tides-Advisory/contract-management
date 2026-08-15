@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer"
+import { isEmailConfigured, sendEmail } from "@/lib/email/transport"
 
 interface ApprovalRequestEmailParams {
   to: string
@@ -46,24 +46,11 @@ function buildApprovalRequestHtml(params: ApprovalRequestEmailParams): string {
 </html>`.trim()
 }
 
-function getTransporter() {
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? "localhost",
-    port: Number(process.env.SMTP_PORT ?? 587),
-    secure: process.env.SMTP_SECURE === "true",
-    auth: process.env.SMTP_USER
-      ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-      : undefined,
-  })
-}
-
 export async function sendApprovalRequestEmail(params: ApprovalRequestEmailParams): Promise<void> {
-  // Silently skip if SMTP is not configured
-  if (!process.env.SMTP_HOST) return
+  // Silently skip if email delivery is not configured
+  if (!isEmailConfigured()) return
 
-  const transporter = getTransporter()
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM ?? "noreply@aakd.io",
+  await sendEmail({
     to: params.to,
     subject: `[Aakd] Approval requested — ${params.contractTitle}`,
     html: buildApprovalRequestHtml(params),
@@ -111,11 +98,9 @@ function buildApprovalRejectionHtml(params: ApprovalRejectionEmailParams): strin
 }
 
 export async function sendApprovalRejectionEmail(params: ApprovalRejectionEmailParams): Promise<void> {
-  if (!process.env.SMTP_HOST) return
+  if (!isEmailConfigured()) return
 
-  const transporter = getTransporter()
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM ?? "noreply@aakd.io",
+  await sendEmail({
     to: params.to,
     subject: `[Aakd] Approval rejected — ${params.contractTitle}`,
     html: buildApprovalRejectionHtml(params),

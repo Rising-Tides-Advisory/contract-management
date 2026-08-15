@@ -1,6 +1,6 @@
-import nodemailer from "nodemailer"
 import { ContractAlert, Contract, Organization } from "@prisma/client"
 import { prisma } from "@/lib/db/client"
+import { isEmailConfigured, sendEmail } from "@/lib/email/transport"
 
 export type ContractAlertWithContract = ContractAlert & {
   contract: Contract & { organization: Organization }
@@ -69,17 +69,6 @@ function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;")
 }
 
-function getTransporter() {
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST ?? "localhost",
-    port: Number(process.env.SMTP_PORT ?? 587),
-    secure: process.env.SMTP_SECURE === "true",
-    auth: process.env.SMTP_USER
-      ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-      : undefined,
-  })
-}
-
 async function resolveAlertRecipients(alert: ContractAlertWithContract): Promise<string[]> {
   const recipients = new Set<string>()
 
@@ -111,8 +100,8 @@ async function resolveAlertRecipients(alert: ContractAlertWithContract): Promise
 }
 
 export async function sendAlertEmail(alert: ContractAlertWithContract): Promise<void> {
-  // Silently skip if SMTP is not configured
-  if (!process.env.SMTP_HOST) return
+  // Silently skip if email delivery is not configured
+  if (!isEmailConfigured()) return
 
   const to = await resolveAlertRecipients(alert)
   if (to.length === 0) return
@@ -120,13 +109,7 @@ export async function sendAlertEmail(alert: ContractAlertWithContract): Promise<
   const label = ALERT_LABELS[alert.alertType] ?? alert.alertType
   const subject = `[Aakd] ${label} — ${alert.contract.title}`
 
-  const transporter = getTransporter()
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM ?? "noreply@aakd.io",
-    to,
-    subject,
-    html: buildAlertHtml(alert),
-  })
+  await sendEmail({ to, subject, html: buildAlertHtml(alert) })
 
   // Stamp emailSentAt so we can audit which alerts triggered an email
   await prisma.contractAlert.update({
