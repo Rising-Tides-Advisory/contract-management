@@ -6,6 +6,7 @@ import { QA_SYSTEM_PROMPT } from "@/lib/ai/prompts"
 import { generateEmbedding } from "@/lib/embedding"
 import { chunkText } from "@/lib/ai/chunking"
 import { resolveAiConfig, withAiConfigCache } from "@/lib/ai/resolve"
+import { defaultModelFor } from "@/lib/ai/models"
 import { logger } from "@/lib/logger"
 import Anthropic from "@anthropic-ai/sdk"
 import { Prisma } from "@prisma/client"
@@ -35,7 +36,7 @@ async function callQaLLM(
   if (aiConfig.provider === "anthropic" && aiConfig.apiKey) {
     const anthropic = new Anthropic({ apiKey: aiConfig.apiKey })
     const msg = await anthropic.messages.create({
-      model: aiConfig.model ?? "claude-haiku-4-5",
+      model: aiConfig.model ?? defaultModelFor("anthropic"),
       max_tokens: 1024,
       system: QA_SYSTEM_PROMPT,
       messages: [{ role: "user", content: userContent }],
@@ -52,7 +53,7 @@ async function callQaLLM(
         Authorization: `Bearer ${aiConfig.apiKey}`,
       },
       body: JSON.stringify({
-        model: aiConfig.model ?? "gpt-4o-mini",
+        model: aiConfig.model ?? defaultModelFor("openai"),
         max_tokens: 1024,
         messages: [
           { role: "system", content: QA_SYSTEM_PROMPT },

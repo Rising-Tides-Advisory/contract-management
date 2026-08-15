@@ -3,6 +3,7 @@ import { resolveAuth } from "@/lib/auth/middleware"
 import { requestContext } from "@/lib/context"
 import { prisma } from "@/lib/db/client"
 import { resolveAiConfig, withAiConfigCache } from "@/lib/ai/resolve"
+import { defaultModelFor } from "@/lib/ai/models"
 import { logger } from "@/lib/logger"
 import Anthropic from "@anthropic-ai/sdk"
 import { z } from "zod"
@@ -39,7 +40,7 @@ async function callExplainLLM(
   if (aiConfig.provider === "anthropic" && aiConfig.apiKey) {
     const anthropic = new Anthropic({ apiKey: aiConfig.apiKey })
     const msg = await anthropic.messages.create({
-      model: aiConfig.model ?? "claude-haiku-4-5",
+      model: aiConfig.model ?? defaultModelFor("anthropic"),
       max_tokens: 512,
       system: EXPLAIN_SYSTEM_PROMPT,
       messages: [{ role: "user", content: userContent }],
@@ -66,7 +67,7 @@ async function callExplainLLM(
         Authorization: `Bearer ${aiConfig.apiKey}`,
       },
       body: JSON.stringify({
-        model: aiConfig.model ?? "gpt-4o-mini",
+        model: aiConfig.model ?? defaultModelFor("openai"),
         max_tokens: 512,
         response_format: { type: "json_object" },
         messages: [
@@ -103,7 +104,7 @@ async function callExplainLLM(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: aiConfig.model ?? "llama3",
+        model: aiConfig.model ?? defaultModelFor("ollama"),
         stream: false,
         messages: [
           { role: "system", content: EXPLAIN_SYSTEM_PROMPT },

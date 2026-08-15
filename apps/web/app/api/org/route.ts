@@ -3,6 +3,7 @@ import { requestContext } from "@/lib/context"
 import { prisma } from "@/lib/db/client"
 import { requireRole } from "@/lib/auth/roles"
 import { z } from "zod"
+import { CurrencyCodeSchema, readCurrencySettings } from "@/lib/currencies"
 
 const UpdateOrgSchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -10,6 +11,8 @@ const UpdateOrgSchema = z.object({
   timezone: z.string().max(100).optional(),
   industry: z.string().max(100).optional(),
   logo: z.string().url().optional().nullable(),
+  enabledCurrencies: z.array(CurrencyCodeSchema).min(1).max(60).optional(),
+  defaultCurrency: CurrencyCodeSchema.optional(),
 })
 
 export async function GET(req: Request) {
@@ -23,7 +26,12 @@ export async function GET(req: Request) {
     })
     if (!org) return new Response("Not Found", { status: 404 })
     const meta = org.metadata ? (JSON.parse(org.metadata) as Record<string, unknown>) : {}
-    return Response.json({ ...org, meta, logo: org.logo ?? null })
+    return Response.json({
+      ...org,
+      meta,
+      logo: org.logo ?? null,
+      currencies: readCurrencySettings(meta),
+    })
   })
 }
 
@@ -61,6 +69,31 @@ export async function PATCH(req: Request) {
     if (parsed.data.timezone !== undefined) meta.timezone = parsed.data.timezone
     if (parsed.data.industry !== undefined) meta.industry = parsed.data.industry
 
+    // Currencies are validated as a pair: a default the org has not enabled
+    // would make the create form preselect a currency its picker cannot show.
+    // Both the incoming values and the already-stored ones are considered, so
+    // sending either field alone still lands on a consistent state.
+    if (
+      parsed.data.enabledCurrencies !== undefined ||
+      parsed.data.defaultCurrency !== undefined
+    ) {
+      const current = readCurrencySettings(meta)
+      const enabled = Array.from(
+        new Set(parsed.data.enabledCurrencies ?? current.enabled),
+      )
+      const preferred = parsed.data.defaultCurrency ?? current.default
+
+      if (!enabled.includes(preferred)) {
+        return Response.json(
+          { error: `Default currency ${preferred} is not in the enabled list` },
+          { status: 422 },
+        )
+      }
+
+      meta.enabledCurrencies = enabled
+      meta.defaultCurrency = preferred
+    }
+
     const org = await prisma.organization.update({
       where: { id: ctx.organizationId },
       data: {
@@ -70,6 +103,11 @@ export async function PATCH(req: Request) {
       },
     })
 
-    return Response.json({ ...org, meta, logo: org.logo ?? null })
+    return Response.json({
+      ...org,
+      meta,
+      logo: org.logo ?? null,
+      currencies: readCurrencySettings(meta),
+    })
   })
 }

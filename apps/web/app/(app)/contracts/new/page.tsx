@@ -18,10 +18,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
-
-// ---- Constants ----
-
-const CURRENCIES = ["USD", "EUR", "GBP", "JPY", "OTHER"] as const
+import { currencyLabel, isCurrencyCode, type OrgCurrencySettings } from "@/lib/currencies"
+import { useOrgCurrencies, pickerOptions } from "@/lib/use-org-currencies"
 
 // ---- Types ----
 
@@ -48,7 +46,7 @@ const defaultFormData: FormData = {
   startDate: "",
   endDate: "",
   value: "",
-  currency: "USD",
+  currency: "",
   paymentTerms: "",
   autoRenewal: false,
   governingLaw: "",
@@ -268,11 +266,13 @@ function ReviewScreen({
   onBack,
   onSubmit,
   onChangeFile,
+  currencies,
 }: {
   file: File
   formData: FormData
   confidence: Record<string, number>
   submitting: boolean
+  currencies: OrgCurrencySettings
   onFormChange: (key: keyof FormData, value: string) => void
   onToggleRenewal: () => void
   onBack: () => void
@@ -413,16 +413,19 @@ function ReviewScreen({
               <div className="space-y-1.5">
                 <Label htmlFor="currency">Currency</Label>
                 <Select
-                  value={formData.currency}
-                  onValueChange={(v) => onFormChange("currency", v ?? "USD")}
+                  value={formData.currency || currencies.default}
+                  onValueChange={(v) => onFormChange("currency", v ?? currencies.default)}
                 >
                   <SelectTrigger id="currency" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CURRENCIES.map((c) => (
+                    {pickerOptions(
+                      currencies.enabled,
+                      formData.currency || currencies.default,
+                    ).map((c) => (
                       <SelectItem key={c} value={c}>
-                        {c}
+                        {currencyLabel(c)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -561,6 +564,7 @@ export default function NewContractPage() {
   const [pageState, setPageState] = useState<PageState>("upload")
   const [file, setFile] = useState<File | null>(null)
   const [formData, setFormData] = useState<FormData>(defaultFormData)
+  const currencies = useOrgCurrencies()
   const [confidence, setConfidence] = useState<Record<string, number>>({})
   const [submitting, setSubmitting] = useState(false)
 
@@ -597,7 +601,9 @@ export default function NewContractPage() {
         startDate: extracted.startDate?.slice(0, 10) ?? "",
         endDate: extracted.endDate?.slice(0, 10) ?? "",
         value: extracted.value != null ? String(extracted.value) : "",
-        currency: extracted.currency ?? "USD",
+        currency: isCurrencyCode(extracted.currency)
+          ? extracted.currency!.trim().toUpperCase()
+          : "",
         paymentTerms: extracted.paymentTerms ?? "",
         autoRenewal: extracted.autoRenewal ?? false,
         governingLaw: extracted.governingLaw ?? "",
@@ -650,8 +656,7 @@ export default function NewContractPage() {
         contractType: formData.contractType || undefined,
         counterpartyName: formData.counterpartyName || undefined,
         value: formData.value ? Number(formData.value) : undefined,
-        // Normalise currency: "OTHER" is a UI-only placeholder; send "USD" instead
-        currency: formData.currency === "OTHER" ? "USD" : (formData.currency || "USD"),
+        currency: formData.currency || currencies.default,
         startDate: formData.startDate ? isoDate(formData.startDate) : undefined,
         endDate: formData.endDate ? isoDate(formData.endDate) : undefined,
         governingLaw: formData.governingLaw || undefined,
@@ -693,7 +698,7 @@ export default function NewContractPage() {
           { field: "startDate",        rawValue: formData.startDate },
           { field: "endDate",          rawValue: formData.endDate },
           { field: "value",            rawValue: formData.value },
-          { field: "currency",         rawValue: formData.currency === "OTHER" ? "USD" : formData.currency },
+          { field: "currency",         rawValue: formData.currency || currencies.default },
           { field: "governingLaw",     rawValue: formData.governingLaw },
           { field: "autoRenewal",      rawValue: String(formData.autoRenewal) },
         ]
@@ -764,6 +769,7 @@ export default function NewContractPage() {
           onBack={handleChangeFile}
           onSubmit={handleSubmit}
           onChangeFile={handleChangeFile}
+          currencies={currencies}
         />
       )}
     </div>

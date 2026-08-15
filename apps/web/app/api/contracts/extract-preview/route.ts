@@ -1,5 +1,6 @@
 import { resolveAuth } from "@/lib/auth/middleware"
 import { resolveAiConfig } from "@/lib/ai/resolve"
+import { defaultModelFor } from "@/lib/ai/models"
 import { logger } from "@/lib/logger"
 import { captureServerEvent } from "@/lib/posthog-server"
 import OpenAI from "openai"
@@ -57,7 +58,7 @@ interface ExtractionResult {
 }
 
 const SYSTEM_PROMPT =
-  "Extract key contract metadata from the following contract text. Return a JSON object with these exact keys: title (string), contractType (one of: NDA, MSA, SOW, EMPLOYMENT, VENDOR, CUSTOMER, OTHER), counterpartyName (string), startDate (ISO date string or null), endDate (ISO date string or null), value (number or null), currency (one of: USD, EUR, GBP, JPY, OTHER), paymentTerms (string or null), governingLaw (string or null), autoRenewal (boolean), description (1-2 sentence summary). Also include a confidence object with keys matching the above fields and values 0-1. Return only valid JSON, no markdown."
+  "Extract key contract metadata from the following contract text. Return a JSON object with these exact keys: title (string), contractType (one of: NDA, MSA, SOW, EMPLOYMENT, VENDOR, CUSTOMER, OTHER), counterpartyName (string), startDate (ISO date string or null), endDate (ISO date string or null), value (number or null), currency (3-letter ISO 4217 code such as USD, EUR, CAD, or null if the contract states no currency), paymentTerms (string or null), governingLaw (string or null), autoRenewal (boolean), description (1-2 sentence summary). Also include a confidence object with keys matching the above fields and values 0-1. Return only valid JSON, no markdown."
 
 async function runAiExtraction(
   contractText: string,
@@ -72,7 +73,7 @@ async function runAiExtraction(
   if (aiConfig.provider === "anthropic") {
     const anthropic = new Anthropic({ apiKey: aiConfig.apiKey })
     const msg = await anthropic.messages.create({
-      model: aiConfig.model ?? "claude-haiku-4-5",
+      model: aiConfig.model ?? defaultModelFor("anthropic"),
       max_tokens: 1024,
       messages: [
         {
@@ -90,7 +91,7 @@ async function runAiExtraction(
   if (aiConfig.provider === "openai") {
     const openai = new OpenAI({ apiKey: aiConfig.apiKey })
     const response = await openai.chat.completions.create({
-      model: aiConfig.model ?? "gpt-4o-mini",
+      model: aiConfig.model ?? defaultModelFor("openai"),
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: contractText },

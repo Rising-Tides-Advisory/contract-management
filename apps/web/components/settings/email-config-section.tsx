@@ -71,13 +71,26 @@ export function EmailConfigSection({ isAdmin }: { isAdmin: boolean }) {
           messageStream: messageStream.trim() || undefined,
         }),
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) {
+        // Surface the server's reason rather than a generic failure — the two
+        // real causes (encryption key missing, migration not applied) are
+        // indistinguishable otherwise.
+        let detail = ""
+        try {
+          const body = await res.json()
+          if (typeof body?.error === "string") detail = body.error
+        } catch {
+          /* non-JSON body — fall through to the generic message */
+        }
+        throw new Error(detail)
+      }
       toast.success("Email configuration saved")
       setServerToken("")
       setEditing(false)
       await load()
-    } catch {
-      toast.error("Failed to save email configuration")
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : ""
+      toast.error(detail || "Failed to save email configuration")
     } finally {
       setSaving(false)
     }
