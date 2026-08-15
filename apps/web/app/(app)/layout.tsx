@@ -269,7 +269,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [isPending, session, router])
 
-  // Identify authenticated user in PostHog so events are tied to real people
+  // Identify authenticated user in PostHog so events are tied to real people.
+  //
+  // Keyed on the ids only, deliberately. `session.user` is a fresh object on
+  // every session refetch, so depending on it — as exhaustive-deps wants —
+  // would re-run identify continuously; email/name/orgName are read as payload,
+  // not as triggers. Identity changes are what matter here, not renames.
   useEffect(() => {
     if (!session?.user || !ph) return
     ph.identify(session.user.id, {
@@ -278,6 +283,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       organizationId: activeOrg?.id,
       organizationName: activeOrg?.name,
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id, activeOrg?.id, ph])
 
   if (isPending || orgPending) {

@@ -6,6 +6,17 @@
       "argsIgnorePattern": "^_",
       "varsIgnorePattern": "^_",
       "caughtErrorsIgnorePattern": "^_"
-    }]
+    }],
+
+    // Every <img> in this app is a user avatar or an org logo, loaded from a URL
+    // we do not control: an identity provider's CDN, or a short-lived signed URL
+    // from S3/R2. next/image is the wrong tool for all of them —
+    //   * it needs images.remotePatterns to enumerate hosts we cannot enumerate,
+    //   * it routes them through Vercel Image Optimization, which is metered, and
+    //   * a signed URL changes on every request, so the optimizer's cache never
+    //     hits and every render is billed as a fresh transform.
+    // All of them render at a fixed small size where optimization buys nothing.
+    // Turned off once here rather than repeated as ten inline suppressions.
+    "@next/next/no-img-element": "off"
   }
 }

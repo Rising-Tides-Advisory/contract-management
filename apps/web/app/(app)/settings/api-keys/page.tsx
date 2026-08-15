@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { toast } from "sonner"
 import { format, formatDistanceToNow } from "date-fns"
 import { Plus, Copy, Check, Info, Trash2 } from "lucide-react"
@@ -23,7 +23,7 @@ export default function ApiKeysPage() {
   const [newKey, setNewKey] = useState<string | null>(null)
   const [copiedNew, setCopiedNew] = useState(false)
 
-  async function fetchKeys() {
+  const fetchKeys = useCallback(async () => {
     try {
       const res = await fetch("/api/org/api-keys")
       if (!res.ok) throw new Error()
@@ -34,9 +34,9 @@ export default function ApiKeysPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [t])
 
-  useEffect(() => { fetchKeys() }, [])
+  useEffect(() => { fetchKeys() }, [fetchKeys])
 
   async function createKey(e: React.FormEvent) {
     e.preventDefault()
