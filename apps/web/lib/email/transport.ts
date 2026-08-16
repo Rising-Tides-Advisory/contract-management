@@ -24,6 +24,21 @@ import { decrypt } from "@/lib/notifications/crypto"
 const POSTMARK_SMTP_HOST = "smtp.postmarkapp.com"
 const DEFAULT_FROM = "noreply@aakd.io"
 
+/** Which configuration a message was sent through. */
+export type EmailSource = "org" | "env"
+
+export interface SendResult {
+  /**
+   * False when nothing was sent because no transport is configured (or there
+   * were no recipients). Most callers ignore this — email is optional and the
+   * send is a deliberate no-op — but the test-email route reports it back to
+   * the admin rather than claiming a delivery that never happened.
+   */
+  sent: boolean
+  /** null when nothing was sent. */
+  source: EmailSource | null
+}
+
 export interface EmailMessage {
   to: string | string[]
   subject: string
@@ -163,11 +178,12 @@ function getTransporter(config: TransportConfig): Transporter {
 
 /**
  * Sends an email. Resolves without sending when email is not configured —
- * callers do not need to guard.
+ * callers do not need to guard. The returned SendResult says whether anything
+ * actually went out and which configuration carried it.
  */
-export async function sendEmail(message: EmailMessage): Promise<void> {
+export async function sendEmail(message: EmailMessage): Promise<SendResult> {
   const recipients = Array.isArray(message.to) ? message.to : [message.to]
-  if (recipients.length === 0) return
+  if (recipients.length === 0) return { sent: false, source: null }
 
   // Org config wins; the server env is the fallback. An org with no config —
   // and all system mail, which passes no organizationId — uses the env.
@@ -175,7 +191,7 @@ export async function sendEmail(message: EmailMessage): Promise<void> {
     ? await resolveOrgConfig(message.organizationId)
     : null
   const config = org?.transport ?? resolveEnvConfig()
-  if (!config) return
+  if (!config) return { sent: false, source: null }
 
   const from = org?.from ?? getFromAddress()
 
@@ -187,6 +203,7 @@ export async function sendEmail(message: EmailMessage): Promise<void> {
       html: message.html,
       headers: { ...config.defaultHeaders, ...message.headers },
     })
+    return { sent: true, source: org ? "org" : "env" }
   } catch (err) {
     // Log then rethrow — callers keep the existing behaviour of surfacing send
     // failures (BullMQ jobs retry on them), but a bare SMTP error no longer

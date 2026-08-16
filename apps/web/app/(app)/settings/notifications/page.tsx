@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
-import { EmailConfigSection } from "@/components/settings/email-config-section"
+import { EmailDeliveryStatus } from "@/components/settings/email-delivery-status"
 import {
   Dialog,
   DialogContent,
@@ -259,7 +259,7 @@ export default function NotificationsSettingsPage() {
         </p>
       </div>
 
-      <EmailConfigSection isAdmin={isAdmin} />
+      <EmailDeliveryStatus />
 
       <section className="space-y-3">
         <div className="flex items-end justify-between">

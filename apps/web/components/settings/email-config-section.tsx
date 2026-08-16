@@ -27,6 +27,7 @@ export function EmailConfigSection({ isAdmin }: { isAdmin: boolean }) {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
 
   const [serverToken, setServerToken] = useState("")
   const [fromAddress, setFromAddress] = useState("")
@@ -95,6 +96,38 @@ export function EmailConfigSection({ isAdmin }: { isAdmin: boolean }) {
       toast.error(detail || "Failed to save email configuration")
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function sendTest() {
+    setTesting(true)
+    try {
+      const res = await fetch("/api/org/email-config/test", { method: "POST" })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) {
+        // The provider's own reason ("Sender signature not confirmed",
+        // "authentication failed") is the whole value of a test send, so it is
+        // shown rather than collapsed into "failed".
+        const message =
+          typeof body?.error === "string"
+            ? body.error
+            : "Failed to send test email"
+        toast.error(message, {
+          description:
+            typeof body?.detail === "string" ? body.detail : undefined,
+        })
+        return
+      }
+      toast.success(`Test email sent to ${body?.sentTo ?? "your address"}`, {
+        description:
+          body?.source === "env"
+            ? "Sent using the server-level configuration."
+            : "Sent using this organization's Postmark configuration.",
+      })
+    } catch {
+      toast.error("Failed to send test email")
+    } finally {
+      setTesting(false)
     }
   }
 
@@ -242,6 +275,32 @@ export function EmailConfigSection({ isAdmin }: { isAdmin: boolean }) {
               </div>
             )}
           </>
+        )}
+
+        {!loading && isAdmin && (
+          <div className="border-t border-border pt-3 space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={sendTest}
+                disabled={testing || saving}
+              >
+                {testing ? "Sending…" : "Send test email"}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                {config?.hasToken
+                  ? "Delivers a sample notification to your account's email address using the saved configuration."
+                  : "No organization configuration is stored, so this tests the server-level email settings."}
+              </p>
+            </div>
+            {editing && (
+              <p className="text-xs text-muted-foreground">
+                Save your changes first — the test uses the stored configuration,
+                not what is typed above.
+              </p>
+            )}
+          </div>
         )}
 
         <p className="text-xs text-muted-foreground border-t border-border pt-3">

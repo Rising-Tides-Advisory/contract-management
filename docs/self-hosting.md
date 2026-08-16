@@ -171,6 +171,19 @@ Works with any SMTP provider: Gmail, SendGrid, AWS SES, Mailgun, etc.
 
 > `SMTP_FROM` is still accepted as an alias for `EMAIL_FROM`.
 
+**Per-organization overrides.** An org admin can point their own Postmark account
+at ClauseFlow under **Settings → Integrations → Communication → Email delivery**;
+that configuration takes precedence over the variables above for everything sent
+on that org's behalf (invitations, renewal alerts, approvals, event
+notifications). Password reset is sent before sign-in, with no org to attribute
+it to, so it always uses the server-level configuration.
+
+The same panel has a **Send test email** button. It delivers a sample
+notification to the signed-in admin's own address through the exact transport
+real notifications use, and reports the mail server's own rejection reason on
+failure — the fastest way to catch an unconfirmed Sender Signature or a bad
+server token.
+
 ### E-Signature (DocuSeal)
 
 | Variable | Description |
@@ -362,3 +375,5 @@ Check that MinIO (or your S3 bucket) is reachable and the bucket exists. The `cr
 ### Emails not sending
 
 Verify your credentials and that either `POSTMARK_SERVER_TOKEN` or `SMTP_HOST` is set. The worker logs a warning at startup when email is unconfigured; check the worker logs for `[email]` prefixed errors.
+
+Start with **Settings → Integrations → Communication → Email delivery → Send test email**: it fails with the mail server's own reason (`535 … authentication failed`, `Sender signature not confirmed`) instead of leaving you to infer it from a renewal alert that never arrived.
