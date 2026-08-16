@@ -45,10 +45,10 @@ describe("Contract lifecycle edge cases", () => {
     expect(body.error).toMatch(/already archived/i)
   })
 
-  it("PATCH rejects invalid status transition ACTIVE → DRAFT with 422", async () => {
+  it("PATCH rejects invalid status transition ARCHIVED → ACTIVE with 422", async () => {
     vi.mocked(prisma.contract.findUnique).mockResolvedValue({
       id: "c1",
-      status: "ACTIVE",
+      status: "ARCHIVED",
       organizationId: "org-1",
     } as any)
 
@@ -56,13 +56,71 @@ describe("Contract lifecycle edge cases", () => {
     const req = new Request("http://localhost/api/contracts/c1", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "DRAFT" }),
+      body: JSON.stringify({ status: "ACTIVE" }),
     })
     const res = await PATCH(req, { params: { id: "c1" } })
 
     expect(res.status).toBe(422)
     const body = await res.json()
     expect(body.error).toMatch(/invalid transition/i)
+  })
+
+  it("PATCH allows reopening ACTIVE → INTERNAL_REVIEW and resets decided approvals", async () => {
+    vi.mocked(prisma.contract.findUnique).mockResolvedValue({
+      id: "c1",
+      status: "ACTIVE",
+      organizationId: "org-1",
+    } as any)
+    vi.mocked(prisma.approval.updateMany).mockResolvedValue({ count: 2 } as any)
+    vi.mocked(prisma.contract.update).mockResolvedValue({
+      id: "c1",
+      status: "INTERNAL_REVIEW",
+      organizationId: "org-1",
+      owner: { id: "user-1", name: "Alice", email: "a@b.com" },
+      tags: [],
+      folder: null,
+    } as any)
+
+    const { PATCH } = await import("@/app/api/contracts/[id]/route")
+    const req = new Request("http://localhost/api/contracts/c1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "INTERNAL_REVIEW" }),
+    })
+    const res = await PATCH(req, { params: { id: "c1" } })
+
+    expect(res.status).toBe(200)
+    expect(prisma.approval.updateMany).toHaveBeenCalledWith({
+      where: { contractId: "c1", status: { in: ["approved", "rejected"] } },
+      data: { status: "pending", decidedAt: null, comment: null },
+    })
+  })
+
+  it("PATCH does not reset approvals when moving forward from ACTIVE → EXPIRED", async () => {
+    vi.mocked(prisma.contract.findUnique).mockResolvedValue({
+      id: "c1",
+      status: "ACTIVE",
+      organizationId: "org-1",
+    } as any)
+    vi.mocked(prisma.contract.update).mockResolvedValue({
+      id: "c1",
+      status: "EXPIRED",
+      organizationId: "org-1",
+      owner: { id: "user-1", name: "Alice", email: "a@b.com" },
+      tags: [],
+      folder: null,
+    } as any)
+
+    const { PATCH } = await import("@/app/api/contracts/[id]/route")
+    const req = new Request("http://localhost/api/contracts/c1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "EXPIRED" }),
+    })
+    const res = await PATCH(req, { params: { id: "c1" } })
+
+    expect(res.status).toBe(200)
+    expect(prisma.approval.updateMany).not.toHaveBeenCalled()
   })
 
   it("PATCH allows valid status transition ACTIVE → ARCHIVED", async () => {

@@ -8,7 +8,6 @@ import {
 } from "lucide-react"
 import {
   CommandDialog,
-  CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
@@ -27,6 +26,13 @@ interface SearchResult {
   counterpartyName: string | null
   createdAt: string
 }
+
+const NAV_COMMANDS = [
+  { label: "Go to Dashboard", href: "/dashboard",     icon: LayoutDashboard },
+  { label: "Go to Contracts", href: "/contracts",     icon: FileText },
+  { label: "Go to Search",    href: "/search",        icon: Search },
+  { label: "Go to Settings",  href: "/settings/org",  icon: Settings },
+] as const
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value)
@@ -98,25 +104,38 @@ export function CmdK() {
 
   const showContractsGroup = query.length >= 2
 
+  // cmdk's built-in filter is off (see shouldFilter below) because contract
+  // results are already ranked by the search API — re-filtering them against
+  // the raw query would drop rows the server matched on notes or document text.
+  // Static commands still need to narrow as you type, so they filter here.
+  const matchesQuery = useCallback(
+    (label: string) => {
+      const q = query.trim().toLowerCase()
+      if (!q) return true
+      return label.toLowerCase().includes(q)
+    },
+    [query],
+  )
+
+  const navItems = NAV_COMMANDS.filter((item) => matchesQuery(item.label))
+
   return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
+    <CommandDialog open={open} onOpenChange={setOpen} shouldFilter={false}>
       <CommandInput
         placeholder="Search contracts or commands..."
         value={query}
         onValueChange={setQuery}
       />
       <CommandList>
-        <CommandEmpty>
-          {searching ? "Searching..." : "No results found."}
-        </CommandEmpty>
-
         {/* Contract search results */}
         {showContractsGroup && (
           <>
             <CommandGroup heading="Contracts">
-              {results.length === 0 && !searching ? (
-                <CommandItem disabled>
-                  No contracts found for &quot;{query}&quot;
+              {results.length === 0 ? (
+                <CommandItem disabled value="contracts-empty">
+                  {searching
+                    ? "Searching…"
+                    : `No contracts found for "${query}"`}
                 </CommandItem>
               ) : (
                 results.map((r) => (
@@ -127,8 +146,13 @@ export function CmdK() {
                     className="flex items-center justify-between gap-2"
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <FileText className="h-4 w-4 shrink-0 text-zinc-400" />
+                      <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <span className="truncate">{r.title}</span>
+                      {r.counterpartyName && (
+                        <span className="truncate text-xs text-muted-foreground">
+                          {r.counterpartyName}
+                        </span>
+                      )}
                     </div>
                     <ContractStatusBadge status={r.status} />
                   </CommandItem>
@@ -139,44 +163,54 @@ export function CmdK() {
           </>
         )}
 
-        <CommandGroup heading="Navigation">
-          <CommandItem onSelect={() => run(() => router.push("/dashboard"))}>
-            <LayoutDashboard className="mr-2 h-4 w-4" />
-            Go to Dashboard
-          </CommandItem>
-          <CommandItem onSelect={() => run(() => router.push("/contracts"))}>
-            <FileText className="mr-2 h-4 w-4" />
-            Go to Contracts
-          </CommandItem>
-          <CommandItem onSelect={() => run(() => router.push("/search"))}>
-            <Search className="mr-2 h-4 w-4" />
-            Go to Search
-          </CommandItem>
-          <CommandItem onSelect={() => run(() => router.push("/settings/org"))}>
-            <Settings className="mr-2 h-4 w-4" />
-            Go to Settings
-          </CommandItem>
-        </CommandGroup>
+        {navItems.length > 0 && (
+          <CommandGroup heading="Navigation">
+            {navItems.map(({ label, icon: Icon, href }) => (
+              <CommandItem
+                key={href}
+                value={label}
+                onSelect={() => run(() => router.push(href))}
+              >
+                <Icon className="mr-2 h-4 w-4" />
+                {label}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
         <CommandSeparator />
         <CommandGroup heading="Actions">
-          <CommandItem onSelect={() => run(() => router.push("/contracts/new"))}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Contract
-          </CommandItem>
-          <CommandItem onSelect={() => run(() => router.push(`/search${query ? `?q=${encodeURIComponent(query)}` : ``}`))}>
-            <Search className="mr-2 h-4 w-4" />
-            Search Contracts
-          </CommandItem>
-        </CommandGroup>
-        <CommandSeparator />
-        <CommandGroup heading="Account">
+          {matchesQuery("New Contract") && (
+            <CommandItem
+              value="New Contract"
+              onSelect={() => run(() => router.push("/contracts/new"))}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              New Contract
+            </CommandItem>
+          )}
+          {/* Always available — the escape hatch to full search with filters. */}
           <CommandItem
-            onSelect={() => run(() => signOut({ fetchOptions: { onSuccess: () => router.push("/login") } }))}
+            value="Search Contracts"
+            onSelect={() => run(() => router.push(`/search${query ? `?q=${encodeURIComponent(query)}` : ``}`))}
           >
-            <LogOut className="mr-2 h-4 w-4" />
-            Sign out
+            <Search className="mr-2 h-4 w-4" />
+            {query ? `Search all contracts for "${query}"` : "Search Contracts"}
           </CommandItem>
         </CommandGroup>
+        {matchesQuery("Sign out") && (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading="Account">
+              <CommandItem
+                value="Sign out"
+                onSelect={() => run(() => signOut({ fetchOptions: { onSuccess: () => router.push("/login") } }))}
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign out
+              </CommandItem>
+            </CommandGroup>
+          </>
+        )}
       </CommandList>
     </CommandDialog>
   )

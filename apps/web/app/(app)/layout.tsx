@@ -119,6 +119,7 @@ function Sidebar({
   userEmail,
   userImage,
   orgName,
+  orgLogo,
   onSignOut,
   navSections,
   searchLabel,
@@ -129,6 +130,7 @@ function Sidebar({
   userEmail: string
   userImage?: string | null
   orgName: string
+  orgLogo?: string | null
   onSignOut: () => void
   navSections: NavSection[]
   searchLabel: string
@@ -136,11 +138,24 @@ function Sidebar({
 }) {
   return (
     <aside className="flex flex-col h-full w-[232px] shrink-0 bg-muted border-r border-border">
-      {/* Logo row */}
+      {/* Org row — the org's own logo and name, falling back to the product
+          mark for orgs that have not uploaded one (Settings → Organization). */}
       <div className="flex items-center gap-2.5 px-3 py-3 border-b border-border">
-        <AakdLogoMark size={26} />
-        <span className="font-extrabold text-sm flex-1 min-w-0 truncate" style={{ fontFamily: "var(--font-sora), 'Sora', sans-serif", letterSpacing: '-0.02em' }}>
-          Aaked
+        {orgLogo ? (
+          <img
+            src={orgLogo}
+            alt=""
+            className="h-[26px] w-[26px] rounded-md object-contain shrink-0 bg-background"
+          />
+        ) : (
+          <AakdLogoMark size={26} />
+        )}
+        <span
+          className="font-extrabold text-sm flex-1 min-w-0 truncate"
+          style={{ fontFamily: "var(--font-sora), 'Sora', sans-serif", letterSpacing: "-0.02em" }}
+          title={orgName || undefined}
+        >
+          {orgName || "Aaked"}
         </span>
         <NotificationBell />
         <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -269,6 +284,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [isPending, session, router])
 
+  // Org branding for the sidebar header. The active-organization payload
+  // usually carries the logo already; /api/org is the authoritative read and
+  // also picks up a logo uploaded during this session without a re-login.
+  const [orgLogo, setOrgLogo] = useState<string | null>(null)
+  useEffect(() => {
+    if (!activeOrg?.id) return
+    const activeOrgLogo = (activeOrg as { logo?: string | null }).logo ?? null
+    setOrgLogo(activeOrgLogo)
+    const controller = new AbortController()
+    fetch("/api/org", { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { logo?: string | null } | null) => {
+        if (data && typeof data.logo === "string") setOrgLogo(data.logo)
+      })
+      .catch(() => {
+        /* keep whatever the session gave us */
+      })
+    return () => controller.abort()
+  }, [activeOrg])
+
   // Self-heal a session that has no active organization.
   //
   // Sessions created before the databaseHooks fix (see lib/auth/config.ts) have
@@ -367,6 +402,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         userEmail={userEmail}
         userImage={userImage}
         orgName={orgName}
+        orgLogo={orgLogo}
         onSignOut={() =>
           signOut({ fetchOptions: { onSuccess: () => router.push("/login") } })
         }

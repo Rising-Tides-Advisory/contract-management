@@ -15,16 +15,32 @@ import { CurrencyCodeSchema } from "@/lib/currencies"
 // Allowed status transitions — all forward and backward moves permitted so
 // users can correct mistakes freely. Only ARCHIVED is semi-terminal (can
 // return to DRAFT to unarchive, but not to mid-flow states).
+//
+// ACTIVE used to be one-way (EXPIRED/TERMINATED/ARCHIVED only), which left no
+// way to pull a live contract back for amendment — the UI offered every status
+// and the API rejected the move with "Invalid transition". Reopening an ACTIVE
+// contract is legitimate; what it must not do is silently keep its old sign-off,
+// so REAPPROVAL_REQUIRED_FROM below sends the approvals back to pending.
 const ALL_STATUSES = ["DRAFT","INTERNAL_REVIEW","PENDING_APPROVAL","AWAITING_SIGNATURE","ACTIVE","EXPIRED","TERMINATED","ARCHIVED"] as const
 const STATUS_TRANSITIONS: Record<string, string[]> = {
   DRAFT:               ALL_STATUSES.filter((s) => s !== "DRAFT"),
   INTERNAL_REVIEW:     ALL_STATUSES.filter((s) => s !== "INTERNAL_REVIEW"),
   PENDING_APPROVAL:    ALL_STATUSES.filter((s) => s !== "PENDING_APPROVAL"),
   AWAITING_SIGNATURE:  ALL_STATUSES.filter((s) => s !== "AWAITING_SIGNATURE"),
-  ACTIVE:              ["EXPIRED", "TERMINATED", "ARCHIVED"], // once active, only forward moves allowed
+  ACTIVE:              ALL_STATUSES.filter((s) => s !== "ACTIVE"),
   EXPIRED:             ALL_STATUSES.filter((s) => s !== "EXPIRED"),
   TERMINATED:          ALL_STATUSES.filter((s) => s !== "TERMINATED"),
   ARCHIVED:            ["DRAFT"], // unarchive → back to draft only
+}
+
+// Statuses a contract only reaches after its approvals were signed off.
+const POST_APPROVAL_STATUSES = new Set(["AWAITING_SIGNATURE", "ACTIVE", "EXPIRED", "TERMINATED"])
+// Statuses that sit before sign-off. Moving from the set above into this one
+// reopens the contract, so any decided approval has to be re-requested.
+const PRE_APPROVAL_STATUSES = new Set(["DRAFT", "INTERNAL_REVIEW", "PENDING_APPROVAL"])
+
+function requiresReapproval(from: string, to: string): boolean {
+  return POST_APPROVAL_STATUSES.has(from) && PRE_APPROVAL_STATUSES.has(to)
 }
 
 const isoDate = z.union([z.string().date(), z.string().datetime({ offset: true })])
@@ -282,6 +298,26 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (status && status !== existing.status) {
       // Audit trail — must not be fire-and-forget
       await writeActivity(params.id, ctx.userId, "STATUS_CHANGED", `${existing.status} → ${status}`)
+
+      // Reopening a signed-off contract invalidates its sign-off: reset every
+      // decided approval to pending so the contract has to go through approval
+      // again rather than inheriting the decision made on the previous terms.
+      if (requiresReapproval(existing.status, status)) {
+        const reset = await prisma.approval.updateMany({
+          where: { contractId: params.id, status: { in: ["approved", "rejected"] } },
+          data: { status: "pending", decidedAt: null, comment: null },
+        })
+        const resetCount = reset?.count ?? 0
+        if (resetCount > 0) {
+          await writeActivity(
+            params.id,
+            ctx.userId,
+            "UPDATED",
+            `${resetCount} approval${resetCount === 1 ? "" : "s"} reset to pending — contract reopened from ${existing.status}`,
+          )
+        }
+      }
+
       if (status === "AWAITING_SIGNATURE") {
         fireAndLog(
           enqueueNotification("contract.sent_for_signing", params.id, ctx.userId, {}),

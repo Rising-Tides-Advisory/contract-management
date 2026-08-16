@@ -12,7 +12,7 @@ import { ContractEditor, EMPTY_DOC, acceptAllChanges, rejectAllChanges } from "@
 import { cn } from "@/lib/utils"
 import type { ContractStatus } from "@/lib/types"
 import { useSession } from "@/lib/auth/client"
-import { Trash2, MessageSquare, GitBranch, CheckCircle2, Loader2, Camera, PenLine } from "lucide-react"
+import { Trash2, MessageSquare, GitBranch, CheckCircle2, Loader2, Camera, PenLine, FileStack } from "lucide-react"
 import type { Editor } from "@tiptap/react"
 import { TrackChangeSidebar } from "@/components/editor/track-change-sidebar"
 import { SnapshotSaveDialog } from "@/components/editor/snapshot-save-dialog"
@@ -539,13 +539,18 @@ export function EditorTab({ contractId, contractStatus, role }: EditorTabProps) 
   const canEdit = role !== "viewer" && !READ_ONLY_STATUSES.has(contractStatus)
   const canExtract = role === "admin" || role === "legal"
 
+  // The contract payload carries its latest uploaded file; the empty state
+  // offers to convert that into an editable document.
+  const attachedFile =
+    (contractOverview?.files as { id: string; filename: string }[] | undefined)?.[0] ?? null
+
   // ─── Fetch document (with async-worker polling) ────────────────────────────
 
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pollAttemptsRef = useRef(0)
-  const DOC_MAX_POLL_ATTEMPTS = 10
-  const DOC_POLL_INTERVAL_MS = 3_000
-
+  // A contract has no editor document until one is imported or started from a
+  // template — an uploaded PDF/DOCX on the Files tab does not create one. The
+  // tab used to hide that behind 30 s of "Converting your document…" polling
+  // and then render a blank page; now `content === null` means "no document"
+  // and the empty state below says so and offers a way out.
   const loadDocument = useCallback(async (isPoll = false) => {
     try {
       const res = await fetch(`/api/contracts/${contractId}/document`)
@@ -562,25 +567,9 @@ export function EditorTab({ contractId, contractStatus, role }: EditorTabProps) 
         setProcessing(false)
         if (isPoll) toast.success("Document ready")
       } else {
-        // Document doesn't exist yet — could be that the worker is still
-        // converting an uploaded file. Poll automatically for a short period.
-        if (!isPoll) {
-          // First load: start polling
-          pollAttemptsRef.current = 0
-          setProcessing(true)
-          setContent(null)
-          setVersion(0)
-          pollTimerRef.current = setTimeout(() => loadDocument(true), DOC_POLL_INTERVAL_MS)
-        } else if (pollAttemptsRef.current < DOC_MAX_POLL_ATTEMPTS) {
-          // Still polling — schedule next attempt
-          pollAttemptsRef.current += 1
-          pollTimerRef.current = setTimeout(() => loadDocument(true), DOC_POLL_INTERVAL_MS)
-        } else {
-          // Gave up polling — show empty editor
-          setContent(EMPTY_DOC)
-          setVersion(0)
-          setProcessing(false)
-        }
+        setContent(null)
+        setVersion(0)
+        setProcessing(false)
       }
     } catch (err) {
       console.error("[editor-tab] load failed:", err)
@@ -593,10 +582,8 @@ export function EditorTab({ contractId, contractStatus, role }: EditorTabProps) 
 
   useEffect(() => {
     loadDocument()
-    return () => {
-      if (pollTimerRef.current) clearTimeout(pollTimerRef.current)
-    }
   }, [loadDocument])
+
 
   // ─── Fetch comments ────────────────────────────────────────────────────────
 
@@ -706,6 +693,73 @@ export function EditorTab({ contractId, contractStatus, role }: EditorTabProps) 
       console.error("[editor-tab] import failed:", err)
       toast.error("Import failed.")
       setImportBusy("idle")
+    }
+  }
+
+  // ─── Seed the editor from the contract's uploaded file ─────────────────────
+
+  const [seeding, setSeeding] = useState(false)
+
+  async function handleLoadFromFile() {
+    if (!attachedFile) return
+    setSeeding(true)
+    try {
+      const res = await fetch(`/api/contracts/${contractId}/document/from-file`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileId: attachedFile.id }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        if (body.error === "read_only_status") {
+          toast.error("This contract is read-only.")
+        } else if (body.error === "invalid_file_type") {
+          toast.error("Only .docx and .pdf files can be loaded into the editor.")
+        } else if (body.error === "no_file") {
+          toast.error("This contract has no uploaded file.")
+        } else {
+          toast.error("Could not load the file into the editor.")
+        }
+        setSeeding(false)
+        return
+      }
+      const { jobId } = await res.json()
+      setProcessing(true)
+
+      const poll = async (attempts = 0): Promise<void> => {
+        if (attempts >= MAX_POLL_ATTEMPTS) {
+          toast.error("Conversion timed out. Please check back later.")
+          setProcessing(false)
+          setSeeding(false)
+          return
+        }
+        const r = await fetch(`/api/contracts/${contractId}/document/import/${jobId}`)
+        if (!r.ok) {
+          toast.error("Conversion failed.")
+          setProcessing(false)
+          setSeeding(false)
+          return
+        }
+        const status = await r.json()
+        if (status.status === "complete") {
+          await loadDocument()
+          setProcessing(false)
+          setSeeding(false)
+          toast.success("Loaded into the editor")
+        } else if (status.status === "failed") {
+          toast.error(`Conversion failed: ${status.error ?? "unknown error"}`)
+          setProcessing(false)
+          setSeeding(false)
+        } else {
+          importPollHandle.current = setTimeout(() => poll(attempts + 1), 1000)
+        }
+      }
+      poll()
+    } catch (err) {
+      console.error("[editor-tab] load-from-file failed:", err)
+      toast.error("Could not load the file into the editor.")
+      setProcessing(false)
+      setSeeding(false)
     }
   }
 
@@ -1239,6 +1293,54 @@ export function EditorTab({ contractId, contractStatus, role }: EditorTabProps) 
               </div>
             )}
 
+            {content === null ? (
+              <div className="flex flex-col items-center gap-4 rounded-lg border border-dashed border-border bg-background/60 px-6 py-12 text-center">
+                <FileStack className="h-8 w-8 text-muted-foreground" strokeWidth={1.5} />
+                <div className="space-y-1.5 max-w-sm">
+                  <p className="text-sm font-medium text-foreground">
+                    No document in the editor yet
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Files uploaded on the Files tab are stored as-is — the editor
+                    holds a separate, editable copy. Load the uploaded file in to
+                    start editing, or begin from a blank page.
+                  </p>
+                </div>
+
+                {canEdit ? (
+                  <div className="flex flex-col items-stretch gap-2 w-full max-w-xs">
+                    {attachedFile && (
+                      <Button size="sm" disabled={seeding} onClick={handleLoadFromFile}>
+                        {seeding ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Converting…
+                          </>
+                        ) : (
+                          <>Load &ldquo;{attachedFile.filename}&rdquo; into the editor</>
+                        )}
+                      </Button>
+                    )}
+                    <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+                      Import from Word or PDF
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => { setContent(EMPTY_DOC); setVersion(0) }}
+                    >
+                      Start from a blank document
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground max-w-sm leading-relaxed">
+                    {role === "viewer"
+                      ? "Your role has read-only access, so the editor cannot be filled in here."
+                      : `This contract is ${contractStatus} — the editor is read-only. Use Change Status to move it back to Draft or Internal Review if it needs editing.`}
+                  </p>
+                )}
+              </div>
+            ) : (
             <ContractEditor
               contractId={contractId}
               initialContent={content ?? EMPTY_DOC}
@@ -1272,6 +1374,7 @@ export function EditorTab({ contractId, contractStatus, role }: EditorTabProps) 
                 setEditorJson(json)
               }}
             />
+            )}
           </div>
           </div>
         </div>
