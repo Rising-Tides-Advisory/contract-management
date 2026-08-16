@@ -1,114 +1,42 @@
+/**
+ * POST /api/contracts/extract-preview — pass 1 of the upload wizard.
+ *
+ * Parses the document and returns deterministic guesses. **No model call.**
+ *
+ * This route used to run the LLM inline, which made wizard latency scale with
+ * document length: a 2-page NDA and a 60-page MSA went down the same code path,
+ * with the text front-truncated at 8,000 characters. It also swallowed the
+ * common failure — `pdf-parse` returns an empty string rather than throwing on
+ * a scanned PDF, so an empty prompt went to the model and the all-null result
+ * came back as a blank form with no error.
+ *
+ * Pass 2 (`./ai`) does the model call in the background, and the
+ * `contract.ai_extract` worker does the authoritative extraction into the
+ * review queue once the contract exists.
+ *
+ * Body: multipart FormData with field "file".
+ */
+
 import { resolveAuth } from "@/lib/auth/middleware"
-import { resolveAiConfig } from "@/lib/ai/resolve"
-import { defaultModelFor } from "@/lib/ai/models"
 import { logger } from "@/lib/logger"
-import { captureServerEvent } from "@/lib/posthog-server"
-import OpenAI from "openai"
-import Anthropic from "@anthropic-ai/sdk"
-import pdfParse from "pdf-parse"
-import mammoth from "mammoth"
+import {
+  detectFileType,
+  isThinText,
+  parseDocument,
+  type ParsedDocument,
+} from "@/lib/ai/document"
+import { heuristicPrefill, titleFromFilename } from "@/lib/ai/heuristics"
+import type { ExtractPreviewResponse } from "@/lib/ai/preview-types"
 
-const MAX_SIZE = 50 * 1024 * 1024 // 50 MB
-const MAX_TEXT_CHARS = 8000
+const MAX_SIZE = 50 * 1024 * 1024 // 50 MB, matching the upload limit
 
-function detectFileType(buffer: Buffer): "pdf" | "docx" | null {
-  // PDF: %PDF magic bytes
-  if (
-    buffer[0] === 0x25 &&
-    buffer[1] === 0x50 &&
-    buffer[2] === 0x44 &&
-    buffer[3] === 0x46
-  ) {
-    return "pdf"
-  }
-  // PK ZIP header — check for DOCX "word/" entry
-  if (buffer[0] === 0x50 && buffer[1] === 0x4b) {
-    if (buffer.includes(Buffer.from("word/"))) {
-      return "docx"
-    }
-  }
-  return null
-}
+/**
+ * Document text returned for the preview dialog. Generous because the dialog's
+ * "find dates in document" scan runs over it — the old 8,000-character cap meant
+ * dates in anything past the first few pages were invisible to it.
+ */
+const PREVIEW_TEXT_CHARS = 100_000
 
-async function extractText(buffer: Buffer, fileType: "pdf" | "docx"): Promise<string> {
-  if (fileType === "pdf") {
-    const result = await pdfParse(buffer)
-    return result.text
-  }
-  // DOCX
-  const result = await mammoth.extractRawText({ buffer })
-  return result.value
-}
-
-interface ExtractionResult {
-  title?: string | null
-  contractType?: string | null
-  counterpartyName?: string | null
-  startDate?: string | null
-  endDate?: string | null
-  value?: number | null
-  currency?: string | null
-  paymentTerms?: string | null
-  governingLaw?: string | null
-  autoRenewal?: boolean
-  description?: string | null
-  confidence?: Record<string, number>
-  error?: string
-  partial?: boolean
-}
-
-const SYSTEM_PROMPT =
-  "Extract key contract metadata from the following contract text. Return a JSON object with these exact keys: title (string), contractType (one of: NDA, MSA, SOW, EMPLOYMENT, VENDOR, CUSTOMER, OTHER), counterpartyName (string), startDate (ISO date string or null), endDate (ISO date string or null), value (number or null), currency (3-letter ISO 4217 code such as USD, EUR, CAD, or null if the contract states no currency), paymentTerms (string or null), governingLaw (string or null), autoRenewal (boolean), description (1-2 sentence summary). Also include a confidence object with keys matching the above fields and values 0-1. Return only valid JSON, no markdown."
-
-async function runAiExtraction(
-  contractText: string,
-  organizationId: string,
-): Promise<ExtractionResult> {
-  const aiConfig = await resolveAiConfig(organizationId)
-
-  if (!aiConfig.provider || !aiConfig.apiKey) {
-    return { error: "ai_unavailable", partial: true, confidence: {} }
-  }
-
-  if (aiConfig.provider === "anthropic") {
-    const anthropic = new Anthropic({ apiKey: aiConfig.apiKey })
-    const msg = await anthropic.messages.create({
-      model: aiConfig.model ?? defaultModelFor("anthropic"),
-      max_tokens: 1024,
-      messages: [
-        {
-          role: "user",
-          content: `${SYSTEM_PROMPT}\n\n${contractText}`,
-        },
-      ],
-    })
-    const raw = msg.content[0]?.type === "text" ? msg.content[0].text : "{}"
-    // Strip markdown fences if model returned them despite instructions
-    const clean = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim()
-    return JSON.parse(clean) as ExtractionResult
-  }
-
-  if (aiConfig.provider === "openai") {
-    const openai = new OpenAI({ apiKey: aiConfig.apiKey })
-    const response = await openai.chat.completions.create({
-      model: aiConfig.model ?? defaultModelFor("openai"),
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: contractText },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0,
-    })
-    const raw = response.choices[0]?.message?.content ?? "{}"
-    return JSON.parse(raw) as ExtractionResult
-  }
-
-  // Ollama: not supported for structured extraction preview
-  return { error: "ai_unavailable", partial: true, confidence: {} }
-}
-
-// POST /api/contracts/extract-preview
-// Body: multipart FormData with field "file"
 export async function POST(req: Request): Promise<Response> {
   const ctx = await resolveAuth(req)
   if (!ctx) return Response.json({ error: "Unauthorized" }, { status: 401 })
@@ -124,59 +52,66 @@ export async function POST(req: Request): Promise<Response> {
   if (!fileField || !(fileField instanceof File)) {
     return Response.json({ error: "Missing file field" }, { status: 400 })
   }
-
   if (fileField.size > MAX_SIZE) {
     return Response.json({ error: "File exceeds 50 MB limit" }, { status: 413 })
   }
 
   const buffer = Buffer.from(await fileField.arrayBuffer())
   const fileType = detectFileType(buffer)
-
   if (!fileType) {
     return Response.json({ error: "unsupported_file_type" }, { status: 400 })
   }
 
-  const fileNameWithoutExt = fileField.name.replace(/\.[^.]+$/, "")
+  const titleFromName = titleFromFilename(fileField.name)
 
-  let contractText = ""
-  let textTruncated = false
+  let doc: ParsedDocument
   try {
-    const raw = await extractText(buffer, fileType)
-    textTruncated = raw.length > MAX_TEXT_CHARS
-    contractText = raw.slice(0, MAX_TEXT_CHARS)
+    doc = await parseDocument(buffer, fileType)
   } catch (err) {
-    logger.error({ err }, "[extract-preview] text extraction failed")
-    return Response.json({
-      title: fileNameWithoutExt,
-      error: "text_extraction_failed",
-      partial: true,
+    // Malformed or password-protected. The worker will still attempt OCR after
+    // upload, so this is a degraded start rather than a dead end.
+    logger.warn({ err, fileType }, "[extract-preview] document parse failed")
+    const body: ExtractPreviewResponse = {
+      status: "text_extraction_failed",
+      prefill: { title: titleFromName },
       confidence: {},
-    })
-  }
-
-  // The text goes back with the result so the wizard can show the document
-  // beside the fields it just pre-filled. DOCX has no browser renderer, so this
-  // is the only thing it has to display; it is already capped at
-  // MAX_TEXT_CHARS, which keeps the response small enough to be worth sending
-  // unconditionally rather than making the client ask for it separately.
-  const documentText = { documentText: contractText, documentTextTruncated: textTruncated }
-
-  try {
-    const extracted = await runAiExtraction(contractText, ctx.organizationId)
-    if (!extracted.error) {
-      captureServerEvent(ctx.userId, "ai_extraction_run", {
-        organizationId: ctx.organizationId,
-      })
+      documentText: null,
+      documentTextTruncated: false,
+      pageCount: 0,
+      fileType,
     }
-    return Response.json({ ...extracted, ...documentText })
-  } catch (err) {
-    logger.error({ err }, "[extract-preview] AI extraction failed")
-    return Response.json({
-      title: fileNameWithoutExt,
-      error: "ai_unavailable",
-      partial: true,
-      confidence: {},
-      ...documentText,
-    })
+    return Response.json(body)
   }
+
+  // The guard the old route was missing: pdf-parse returns "" for a scanned
+  // page rather than throwing, so this is the only place the condition shows up.
+  if (isThinText(doc.text)) {
+    logger.info(
+      { fileType, pageCount: doc.pageCount, chars: doc.text.length },
+      "[extract-preview] no text layer — likely a scanned document",
+    )
+    const body: ExtractPreviewResponse = {
+      status: "no_text_layer",
+      prefill: { title: titleFromName },
+      confidence: {},
+      documentText: null,
+      documentTextTruncated: false,
+      pageCount: doc.pageCount,
+      fileType,
+    }
+    return Response.json(body)
+  }
+
+  const { prefill, confidence } = heuristicPrefill(doc.text)
+
+  const body: ExtractPreviewResponse = {
+    status: "ok",
+    prefill: { ...prefill, title: titleFromName },
+    confidence,
+    documentText: doc.text.slice(0, PREVIEW_TEXT_CHARS),
+    documentTextTruncated: doc.text.length > PREVIEW_TEXT_CHARS,
+    pageCount: doc.pageCount,
+    fileType,
+  }
+  return Response.json(body)
 }

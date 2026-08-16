@@ -69,6 +69,23 @@ import type {
 } from "@/lib/jobs/queues"
 import { defaultModelFor } from "@/lib/ai/models"
 import {
+  DEFAULT_MAX_PAGES,
+  detectFileType,
+  parseDocument,
+  type ParsedDocument,
+} from "@/lib/ai/document"
+import {
+  callExtractionModel,
+  type ExtractionProviderId,
+} from "@/lib/ai/extract-call"
+import {
+  buildExtractionSystemPrompt,
+  longDocumentModelOverride,
+  parseExtractionResponse,
+  planExtraction,
+  verifyCitations,
+} from "@/lib/ai/extraction"
+import {
   contractExtractQueue,
   contractAiExtractQueue,
   contractEmbedQueue,
@@ -247,49 +264,6 @@ async function pdfToDocxBuffer(pdfBuffer: Buffer): Promise<Buffer | null> {
   }
 }
 
-// ─── Extraction prompt ────────────────────────────────────────────────────────
-
-const EXTRACTION_SYSTEM_PROMPT = `You are a contract analysis assistant. Extract the following fields from the contract text provided. Return ONLY a valid JSON object where each key maps to an object with this exact shape:
-
-{ "value": <field value or null>, "confidence": <number between 0 and 1>, "sourceText": <exact quote from the contract supporting the value, or null>, "sourcePage": <1-indexed page number where the quote appears, or null> }
-
-Use null for the "value" of any field you cannot determine. When "value" is null, set "confidence" to 0 and "sourceText"/"sourcePage" to null. "sourceText" must be a verbatim substring of the contract — do not paraphrase. "confidence" must reflect how certain you are that the extracted value is correct: 1 = explicit and unambiguous, 0.5 = inferred, 0 = unknown.
-
-Fields to extract (each with the shape above):
-- contractType: one of "NDA" | "MSA" | "SOW" | "EMPLOYMENT" | "VENDOR" | "CUSTOMER" | "OTHER" or null
-- startDate: ISO 8601 date string (YYYY-MM-DD) or null
-- endDate: ISO 8601 date string (YYYY-MM-DD) or null
-- renewalDate: ISO 8601 date string (YYYY-MM-DD) or null
-- value: numeric contract value (number) or null
-- currency: 3-letter ISO currency code (e.g. "USD", "EUR") or null
-- counterpartyName: name of the counterparty organization or individual (string) or null
-- governingLaw: governing law / jurisdiction (string) or null
-- noticePeriodDays: notice period in days (integer) or null
-- autoRenewal: whether the contract auto-renews (boolean) or null
-
-Example output:
-{
-  "contractType": { "value": "NDA", "confidence": 0.95, "sourceText": "This Mutual Non-Disclosure Agreement", "sourcePage": 1 },
-  "startDate": { "value": "2025-01-15", "confidence": 0.9, "sourceText": "Effective Date: January 15, 2025", "sourcePage": 1 },
-  "value": { "value": null, "confidence": 0, "sourceText": null, "sourcePage": null }
-}
-
-Return ONLY the JSON object, no explanation, no markdown fences.`
-
-// Per-provider character budget for the contract text we feed to the LLM.
-// Roughly 4 chars per token; we leave headroom for prompt + JSON response.
-function getTextLimitForProvider(): number {
-  const provider = (process.env.AI_PROVIDER?.toLowerCase() || "").trim()
-  if (provider === "ollama") return 32_000
-  if (provider === "openai") return 400_000
-  if (provider === "anthropic") return 600_000
-  // Auto-detect when AI_PROVIDER is unset.
-  if (process.env.ANTHROPIC_API_KEY) return 600_000
-  if (process.env.OPENAI_API_KEY) return 400_000
-  if (process.env.OLLAMA_BASE_URL) return 32_000
-  return 100_000
-}
-
 // ─── Worker: contract.extract ─────────────────────────────────────────────────
 
 const extractWorker = new Worker<ContractExtractJobData>(
@@ -425,75 +399,114 @@ extractWorker.on("failed", (job, err) =>
   logger.error({ err, jobId: job?.id }, "[extract] job failed"),
 )
 
-// ─── Provider abstraction ─────────────────────────────────────────────────────
-// Set AI_PROVIDER=anthropic|openai|ollama in .env.local
-// Defaults to anthropic if ANTHROPIC_API_KEY is set, then openai, then ollama.
+// ─── Worker: contract.ai_extract ─────────────────────────────────────────────
+//
+// The authoritative extraction pass. Unlike the upload wizard's best-effort
+// preview, everything written here lands in the AIExtraction review queue with
+// a citation that has been checked against the source document.
+//
+// Provider selection here is env-based (AI_PROVIDER + keys) rather than the
+// per-org BYOK path used by API routes — the worker has no request context.
 
-async function callExtractionLLM(text: string): Promise<string | null> {
-  const provider = process.env.AI_PROVIDER?.toLowerCase() || (
-    process.env.ANTHROPIC_API_KEY ? "anthropic"
-      : process.env.OPENAI_API_KEY     ? "openai"
-      : process.env.OLLAMA_BASE_URL    ? "ollama"
-      : null
-  )
+/**
+ * Re-read the contract's source file so extraction can work from per-page text
+ * rather than one flat string.
+ *
+ * The job only carries `extractedText`, which is enough to prompt with but not
+ * to cite: without page boundaries a `sourcePage` cannot be produced honestly,
+ * and without per-page text a returned one cannot be checked. One extra storage
+ * read per contract is cheap next to the model call it makes trustworthy.
+ *
+ * Returns null when the file is missing or unreadable; the caller falls back to
+ * the flat text it was given.
+ */
+async function loadSourceDocument(
+  contractId: string,
+): Promise<{ doc: ParsedDocument; buffer: Buffer } | null> {
+  try {
+    const file = await getWorkerPrisma().contractFile.findFirst({
+      where: { contractId },
+      orderBy: [{ isLatest: "desc" }, { createdAt: "desc" }],
+      // Type comes from magic bytes, not the stored mimeType — per CLAUDE.md we
+      // never trust a client-supplied content type.
+      select: { storageKey: true },
+    })
+    if (!file) return null
 
-  if (!provider) {
-    logger.warn("[ai_extract] no AI provider configured — set AI_PROVIDER or one of ANTHROPIC_API_KEY / OPENAI_API_KEY / OLLAMA_BASE_URL")
+    const signedUrl = await storage.getSignedDownloadUrl(file.storageKey)
+    const response = await fetch(signedUrl)
+    if (!response.ok) {
+      logger.warn(
+        { contractId, status: response.status },
+        "[ai_extract] could not download source file",
+      )
+      return null
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer())
+    const fileType = detectFileType(buffer)
+    if (!fileType) return null
+
+    return { doc: await parseDocument(buffer, fileType), buffer }
+  } catch (err) {
+    logger.warn({ err, contractId }, "[ai_extract] could not re-read source file")
     return null
   }
+}
+
+/** Env-based provider resolution — the worker runs outside any request. */
+function resolveWorkerProvider(): {
+  provider: ExtractionProviderId
+  apiKey: string | null
+  model: string
+} | null {
+  const configured = process.env.AI_PROVIDER?.toLowerCase().trim()
+  const provider = (configured ||
+    (process.env.ANTHROPIC_API_KEY
+      ? "anthropic"
+      : process.env.OPENAI_API_KEY
+        ? "openai"
+        : process.env.OLLAMA_BASE_URL
+          ? "ollama"
+          : null)) as ExtractionProviderId | null
+
+  if (!provider) return null
 
   if (provider === "anthropic") {
-    if (!process.env.ANTHROPIC_API_KEY) { logger.warn("[ai_extract] AI_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set"); return null }
-    const msg = await getAnthropic().messages.create({
+    if (!process.env.ANTHROPIC_API_KEY) {
+      logger.warn("[ai_extract] AI_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set")
+      return null
+    }
+    return {
+      provider,
+      apiKey: process.env.ANTHROPIC_API_KEY,
       model: process.env.ANTHROPIC_MODEL ?? defaultModelFor("anthropic"),
-      max_tokens: 2048,
-      temperature: 0, // structured extraction — deterministic output
-      system: EXTRACTION_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: `Here is the contract text to analyze:\n\n${text}` }],
-    })
-    const block = msg.content.find((b) => b.type === "text")
-    return block?.type === "text" ? block.text.trim() : ""
+    }
   }
 
   if (provider === "openai") {
-    if (!process.env.OPENAI_API_KEY) { logger.warn("[ai_extract] AI_PROVIDER=openai but OPENAI_API_KEY is not set"); return null }
-    const res = await getOpenAI().chat.completions.create({
+    if (!process.env.OPENAI_API_KEY) {
+      logger.warn("[ai_extract] AI_PROVIDER=openai but OPENAI_API_KEY is not set")
+      return null
+    }
+    return {
+      provider,
+      apiKey: process.env.OPENAI_API_KEY,
       model: process.env.OPENAI_MODEL ?? defaultModelFor("openai"),
-      max_tokens: 2048,
-      temperature: 0, // structured extraction — deterministic output
-      messages: [
-        { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
-        { role: "user", content: `Here is the contract text to analyze:\n\n${text}` },
-      ],
-    })
-    return res.choices[0]?.message.content?.trim() ?? ""
+    }
   }
 
   if (provider === "ollama") {
-    const base = (process.env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/$/, "")
-    const model = process.env.OLLAMA_MODEL ?? defaultModelFor("ollama")
-    const res = await fetch(`${base}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        stream: false,
-        messages: [
-          { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
-          { role: "user", content: `Here is the contract text to analyze:\n\n${text}` },
-        ],
-      }),
-    })
-    if (!res.ok) throw new Error(`Ollama returned ${res.status}`)
-    const data = await res.json() as { message?: { content?: string } }
-    return data.message?.content?.trim() ?? ""
+    return {
+      provider,
+      apiKey: null,
+      model: process.env.OLLAMA_MODEL ?? defaultModelFor("ollama"),
+    }
   }
 
   logger.warn({ provider }, "[ai_extract] unknown AI_PROVIDER")
   return null
 }
-
-// ─── Worker: contract.ai_extract ─────────────────────────────────────────────
 
 const aiExtractWorker = new Worker<ContractAiExtractJobData>(
   "contract.ai_extract",
@@ -502,118 +515,121 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
 
     logger.info({ jobId: job.id, contractId, force: !!force }, "[ai_extract] processing job")
 
-    const limit = getTextLimitForProvider()
-    const textToAnalyze =
-      extractedText.length > limit ? extractedText.slice(0, limit) : extractedText
-    if (extractedText.length > limit) {
-      logger.debug(
-        { contractId, originalChars: extractedText.length, limitChars: limit, provider: process.env.AI_PROVIDER ?? "(auto)" },
-        "[ai_extract] truncated contract text for provider",
+    const skip = (detail: string, reason: string) =>
+      getWorkerPrisma().activity.create({
+        data: {
+          contractId,
+          userId: null,
+          actorLabel: "System",
+          action: "METADATA_EXTRACTED",
+          detail,
+          metadata: { skipped: true, reason },
+        },
+      })
+
+    const config = resolveWorkerProvider()
+    if (!config) {
+      logger.warn({ contractId }, "[ai_extract] no AI provider configured")
+      await skip("AI extraction skipped — no AI provider configured", "no_provider")
+      return
+    }
+
+    let { model } = config
+
+    // Prefer the real file over the flat text in the job payload: it gives us
+    // page boundaries to cite and to verify against, and lets a scanned PDF be
+    // sent to the model natively instead of as OCR noise.
+    const source = await loadSourceDocument(contractId)
+    const doc: ParsedDocument =
+      source?.doc ??
+      // Fallback for jobs whose contract has no stored file (document-authoring
+      // enqueues text directly). No pagination, so no page citations.
+      { fileType: "docx", pages: [extractedText], pageCount: 0, text: extractedText }
+    const buffer = source?.buffer ?? Buffer.alloc(0)
+
+    // A long document can be routed to a larger-context model instead of having
+    // pages selected out of it — opt-in, because silently upgrading the model
+    // changes what a self-hosting org pays per contract.
+    const override = longDocumentModelOverride()
+    if (override && doc.pageCount > DEFAULT_MAX_PAGES && config.provider === "anthropic") {
+      logger.info(
+        { contractId, pageCount: doc.pageCount, from: model, to: override },
+        "[ai_extract] long document — using AI_EXTRACTION_LONG_DOC_MODEL",
+      )
+      model = override
+    }
+
+    const planned = planExtraction({ doc, buffer, provider: config.provider, model })
+    if (!planned.ok) {
+      logger.warn(
+        { contractId, pageCount: doc.pageCount },
+        "[ai_extract] no readable text and native PDF not viable",
+      )
+      await skip(
+        "AI extraction skipped — no readable text could be recovered from the document",
+        "no_text_layer",
+      )
+      return
+    }
+    const plan = planned.plan
+
+    if (plan.pagesDropped > 0) {
+      // Never let truncation be silent — a reviewer needs to know the model was
+      // not shown every page before they trust a null field.
+      logger.info(
+        {
+          contractId,
+          pageCount: doc.pageCount,
+          pagesAnalyzed: plan.pagesAnalyzed,
+          pagesDropped: plan.pagesDropped,
+        },
+        "[ai_extract] long document — analyzed a page selection",
       )
     }
 
     let rawJson: string
     try {
-      const result = await callExtractionLLM(textToAnalyze)
-      if (result === null) {
-        logger.warn({ contractId }, "[ai_extract] extraction skipped — no AI provider configured")
-        await getWorkerPrisma().activity.create({
-          data: {
-            contractId,
-            userId: null,
-            actorLabel: "System",
-            action: "METADATA_EXTRACTED",
-            detail: "AI extraction skipped — no AI provider configured",
-            metadata: { skipped: true, reason: "no_provider" },
-          },
-        })
-        return
-      }
-      rawJson = result
-    } catch (err) {
-      logger.error({ err, contractId }, "[ai_extract] LLM call failed")
-      await getWorkerPrisma().activity.create({
-        data: {
-          contractId,
-          userId: null,
-          actorLabel: "System",
-          action: "METADATA_EXTRACTED",
-          detail: `AI extraction failed: ${(err as Error)?.message ?? String(err)}`,
-          metadata: { skipped: true, reason: "llm_error" },
-        },
+      rawJson = await callExtractionModel({
+        provider: config.provider,
+        apiKey: config.apiKey,
+        model,
+        systemPrompt: buildExtractionSystemPrompt({ canCitePages: plan.canCitePages }),
+        content: plan.content,
+        ollamaBaseUrl: process.env.OLLAMA_BASE_URL,
       })
+    } catch (err) {
+      logger.error({ err, contractId, model, mode: plan.mode }, "[ai_extract] LLM call failed")
+      await skip(
+        `AI extraction failed: ${(err as Error)?.message ?? String(err)}`,
+        "llm_error",
+      )
       return
     }
 
-    // Strip markdown fences if the model emitted them despite instructions.
-    const cleaned = rawJson
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim()
-
-    let extracted: Record<string, unknown>
-    try {
-      extracted = JSON.parse(cleaned)
-    } catch {
+    const parsed = parseExtractionResponse(rawJson)
+    if (parsed === null) {
       logger.error(
         { contractId, rawJson: rawJson.slice(0, 200) },
         "[ai_extract] failed to parse LLM response as JSON",
       )
-      await getWorkerPrisma().activity.create({
-        data: {
-          contractId,
-          userId: null,
-          actorLabel: "System",
-          action: "METADATA_EXTRACTED",
-          detail: "AI extraction failed: invalid JSON response",
-          metadata: { skipped: true, reason: "parse_error" },
-        },
-      })
+      await skip("AI extraction failed: invalid JSON response", "parse_error")
       return
     }
 
-    type FieldExtraction = {
-      value: unknown
-      confidence: number
-      sourceText: string | null
-      sourcePage: number | null
+    // Ground every citation in the source document. A model asked for a page
+    // number always returns a plausible one; this replaces that guess with the
+    // page the quote is actually on, and discards quotes that appear nowhere.
+    const { extractions: fieldData, stats } = verifyCitations(parsed, doc.pages, {
+      canVerify: plan.canVerify,
+      assignPages: plan.assignPages,
+    })
+
+    if (stats.unfounded > 0) {
+      logger.warn(
+        { contractId, model, ...stats },
+        "[ai_extract] discarded citations not found in the source document",
+      )
     }
-
-    function normalizeField(raw: unknown): FieldExtraction | null {
-      // Legacy / lenient shape: bare scalar -> wrap with confidence 0
-      if (raw === null || raw === undefined) return null
-      if (typeof raw !== "object" || Array.isArray(raw)) {
-        return { value: raw, confidence: 0, sourceText: null, sourcePage: null }
-      }
-      const obj = raw as Record<string, unknown>
-      if (obj.value === null || obj.value === undefined) return null
-      const conf = typeof obj.confidence === "number" ? obj.confidence : 0
-      const clampedConf = Math.max(0, Math.min(1, conf))
-      const src = typeof obj.sourceText === "string" && obj.sourceText.length > 0
-        ? obj.sourceText
-        : null
-      const page = typeof obj.sourcePage === "number" && Number.isFinite(obj.sourcePage)
-        ? Math.trunc(obj.sourcePage)
-        : null
-      return { value: obj.value, confidence: clampedConf, sourceText: src, sourcePage: page }
-    }
-
-    const EXTRACTABLE_FIELDS = [
-      "contractType",
-      "startDate",
-      "endDate",
-      "renewalDate",
-      "value",
-      "currency",
-      "counterpartyName",
-      "governingLaw",
-      "noticePeriodDays",
-      "autoRenewal",
-    ]
-
-    const fieldData = EXTRACTABLE_FIELDS
-      .map((field) => ({ field, data: normalizeField(extracted[field]) }))
-      .filter((entry): entry is { field: string; data: FieldExtraction } => entry.data !== null)
 
     if (fieldData.length === 0) {
       logger.info({ contractId }, "[ai_extract] no fields extracted")
@@ -661,12 +677,35 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
       })
     }
 
-    await getWorkerPrisma().activity.create({
-      data: { contractId, userId: null, actorLabel: "System", action: "METADATA_EXTRACTED", detail: `AI extracted ${fieldData.length} fields` },
+    const coverage =
+      plan.pagesDropped > 0
+        ? ` (analyzed ${plan.pagesAnalyzed} of ${doc.pageCount} pages)`
+        : ""
+    await db.activity.create({
+      data: {
+        contractId,
+        userId: null,
+        actorLabel: "System",
+        action: "METADATA_EXTRACTED",
+        detail: `AI extracted ${fieldData.length} fields${coverage}`,
+        metadata: {
+          mode: plan.mode,
+          pageCount: doc.pageCount,
+          pagesAnalyzed: plan.pagesAnalyzed,
+          pagesDropped: plan.pagesDropped,
+          citations: { ...stats },
+        },
+      },
     })
 
     logger.info(
-      { contractId, count: fieldData.length, fields: fieldData.map((f) => f.field) },
+      {
+        contractId,
+        count: fieldData.length,
+        fields: fieldData.map((f) => f.field),
+        mode: plan.mode,
+        ...stats,
+      },
       "[ai_extract] upserted extraction records",
     )
 
