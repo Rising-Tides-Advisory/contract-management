@@ -21,6 +21,12 @@ import { UploadPreviewDialog } from "@/components/contracts/upload-preview-dialo
 import { cn } from "@/lib/utils"
 import { currencyLabel, isCurrencyCode, type OrgCurrencySettings } from "@/lib/currencies"
 import { useOrgCurrencies, pickerOptions } from "@/lib/use-org-currencies"
+import {
+  previewStatusMessage,
+  type AiExtractPreviewResponse,
+  type ExtractPreviewResponse,
+  type PreviewPrefill,
+} from "@/lib/ai/preview-types"
 
 // ---- Types ----
 
@@ -54,25 +60,8 @@ const defaultFormData: FormData = {
   description: "",
 }
 
-interface ExtractionResult {
-  title?: string | null
-  contractType?: string | null
-  counterpartyName?: string | null
-  startDate?: string | null
-  endDate?: string | null
-  value?: number | null
-  currency?: string | null
-  paymentTerms?: string | null
-  governingLaw?: string | null
-  autoRenewal?: boolean
-  description?: string | null
-  confidence?: Record<string, number>
-  /** Text the route read out of the document, for the preview dialog. */
-  documentText?: string | null
-  documentTextTruncated?: boolean
-  error?: string
-  partial?: boolean
-}
+/** Progress of the background AI enrichment call (pass 2). */
+type AiState = "idle" | "running" | "done" | "unavailable"
 
 // ---- Utility ----
 
@@ -82,6 +71,35 @@ function titleCaseFromFilename(filename: string): string {
     .replace(/[-_]+/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase())
     .trim()
+}
+
+/**
+ * Translate a preview payload into form values.
+ *
+ * `value` is numeric on the wire and a string in the form; dates arrive as full
+ * ISO strings and the date inputs want YYYY-MM-DD.
+ */
+function prefillToFormPatch(
+  prefill: PreviewPrefill,
+  currencyDefault: string,
+): Partial<FormData> {
+  const patch: Partial<FormData> = {}
+  if (prefill.title) patch.title = prefill.title
+  if (prefill.contractType) patch.contractType = prefill.contractType
+  if (prefill.counterpartyName) patch.counterpartyName = prefill.counterpartyName
+  if (prefill.startDate) patch.startDate = prefill.startDate.slice(0, 10)
+  if (prefill.endDate) patch.endDate = prefill.endDate.slice(0, 10)
+  if (prefill.value != null) patch.value = String(prefill.value)
+  if (isCurrencyCode(prefill.currency)) {
+    patch.currency = prefill.currency!.trim().toUpperCase()
+  } else if (currencyDefault && prefill.value != null) {
+    patch.currency = currencyDefault
+  }
+  if (prefill.paymentTerms) patch.paymentTerms = prefill.paymentTerms
+  if (prefill.governingLaw) patch.governingLaw = prefill.governingLaw
+  if (prefill.autoRenewal != null) patch.autoRenewal = prefill.autoRenewal
+  if (prefill.description) patch.description = prefill.description
+  return patch
 }
 
 function formatFileSize(bytes: number): string {
@@ -243,10 +261,10 @@ function ExtractingScreen() {
       </div>
       <div className="text-center space-y-1.5">
         <h2 className="text-xl font-semibold text-foreground">
-          Analyzing your contract...
+          Reading your contract...
         </h2>
         <p className="text-sm text-muted-foreground">
-          AI is extracting key fields. This takes a few seconds.
+          Opening the document. AI extraction continues in the background.
         </p>
       </div>
       <div className="flex gap-1.5 mt-2">
@@ -267,6 +285,9 @@ function ReviewScreen({
   formData,
   confidence,
   submitting,
+  aiState,
+  statusNote,
+  coverageNote,
   onFormChange,
   onToggleRenewal,
   onBack,
@@ -280,6 +301,9 @@ function ReviewScreen({
   formData: FormData
   confidence: Record<string, number>
   submitting: boolean
+  aiState: AiState
+  statusNote: string | null
+  coverageNote: string | null
   currencies: OrgCurrencySettings
   onFormChange: (key: keyof FormData, value: string) => void
   onToggleRenewal: () => void
@@ -516,20 +540,41 @@ function ReviewScreen({
               </span>
             </div>
 
-            {Object.keys(confidence).length > 0 ? (
+            {Object.keys(confidence).length > 0 && (
               <div className="space-y-2.5 pt-1">
                 {Object.entries(confidence).map(([field, val]) => (
                   <ConfidenceBar key={field} label={field} value={val} />
                 ))}
               </div>
-            ) : (
+            )}
+
+            {aiState === "running" && (
+              <p className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
+                <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                Reading the document — fields will fill in as they are found.
+              </p>
+            )}
+
+            {/* Say what actually went wrong. This panel used to render "No
+                confidence data available" for every failure mode, which gave a
+                blank form and no way to tell a scanned PDF from a missing key. */}
+            {statusNote && (
+              <p className="text-xs text-amber-600 dark:text-amber-500 pt-1">{statusNote}</p>
+            )}
+
+            {coverageNote && (
+              <p className="text-xs text-muted-foreground pt-1">{coverageNote}</p>
+            )}
+
+            {aiState === "done" && Object.keys(confidence).length === 0 && !statusNote && (
               <p className="text-xs text-muted-foreground pt-1">
-                No confidence data available.
+                No fields could be read from this document.
               </p>
             )}
 
             <p className="text-xs text-muted-foreground pt-1 border-t border-border">
-              Values pre-filled from your document. Review and correct as needed.
+              Values pre-filled from your document. Review and correct as needed — a
+              full extraction runs after you create the contract.
             </p>
           </div>
 
@@ -615,21 +660,108 @@ export default function NewContractPage() {
   const [documentText, setDocumentText] = useState<string | null>(null)
   const [documentTextTruncated, setDocumentTextTruncated] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [aiState, setAiState] = useState<AiState>("idle")
+  const [statusNote, setStatusNote] = useState<string | null>(null)
+  const [coverageNote, setCoverageNote] = useState<string | null>(null)
+
+  /**
+   * Fields the user has typed into. The background AI pass fills in around
+   * them, so a value someone has already corrected is never overwritten when
+   * the model result lands a few seconds later.
+   */
+  const userEdited = useRef<Set<keyof FormData>>(new Set())
+  /** Guards against a stale pass-2 response landing after the file was changed. */
+  const requestSeq = useRef(0)
 
   function updateField(key: keyof FormData, value: string) {
+    userEdited.current.add(key)
     setFormData((prev) => ({ ...prev, [key]: value }))
   }
 
   function toggleRenewal() {
+    userEdited.current.add("autoRenewal")
     setFormData((prev) => ({ ...prev, autoRenewal: !prev.autoRenewal }))
   }
 
+  /** Apply a patch to fields the user has not touched. */
+  const mergeUntouched = useCallback((patch: Partial<FormData>) => {
+    setFormData((prev) => {
+      const next = { ...prev }
+      for (const key of Object.keys(patch) as Array<keyof FormData>) {
+        if (userEdited.current.has(key)) continue
+        const value = patch[key]
+        if (value === undefined) continue
+        Object.assign(next, { [key]: value })
+      }
+      return next
+    })
+  }, [])
+
+  /**
+   * Pass 2 — the model call. Runs in the background while the user is already
+   * looking at the review form, so wizard latency does not scale with document
+   * length. Best-effort by design: the authoritative extraction is the
+   * `contract.ai_extract` worker job that runs after the contract is created.
+   */
+  const runAiPass = useCallback(
+    async (selectedFile: File, seq: number) => {
+      setAiState("running")
+      try {
+        const fd = new globalThis.FormData()
+        fd.append("file", selectedFile)
+        const res = await fetch("/api/contracts/extract-preview/ai", {
+          method: "POST",
+          body: fd,
+          credentials: "include",
+        })
+        if (seq !== requestSeq.current) return // a different file is loaded now
+
+        if (!res.ok) {
+          setAiState("unavailable")
+          return
+        }
+
+        const ai: AiExtractPreviewResponse = await res.json()
+        if (seq !== requestSeq.current) return
+
+        if (ai.status !== "ok") {
+          setAiState("unavailable")
+          setStatusNote(previewStatusMessage(ai.status))
+          return
+        }
+
+        mergeUntouched(prefillToFormPatch(ai.prefill, currencies.default))
+        setConfidence((prev) => ({ ...prev, ...ai.confidence }))
+        setAiState("done")
+        // Surface page selection rather than letting truncation look like a
+        // document that simply had no end date.
+        setCoverageNote(
+          ai.pagesDropped > 0
+            ? `Analyzed ${ai.pagesAnalyzed} of ${ai.pagesAnalyzed + ai.pagesDropped} pages — check fields that rely on the omitted sections.`
+            : null,
+        )
+      } catch {
+        if (seq !== requestSeq.current) return
+        setAiState("unavailable")
+        setStatusNote("Could not reach AI extraction. Fill in the fields manually.")
+      }
+    },
+    [currencies.default, mergeUntouched],
+  )
+
   async function handleFileSelected(selectedFile: File) {
+    const seq = ++requestSeq.current
+    userEdited.current = new Set()
     setFile(selectedFile)
     setPageState("extracting")
+    setStatusNote(null)
+    setCoverageNote(null)
+    setAiState("idle")
 
-    const fileNameWithoutExt = selectedFile.name.replace(/\.[^.]+$/, "")
+    const fallbackTitle = titleCaseFromFilename(selectedFile.name)
 
+    // Pass 1 — parse only. Sub-second regardless of document length, so the
+    // review form renders immediately instead of behind a model call.
     try {
       const fd = new globalThis.FormData()
       fd.append("file", selectedFile)
@@ -639,56 +771,67 @@ export default function NewContractPage() {
         body: fd,
         credentials: "include",
       })
+      if (seq !== requestSeq.current) return
 
-      const extracted: ExtractionResult = await res.json()
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string }
+        setFormData({ ...defaultFormData, title: fallbackTitle })
+        setConfidence({})
+        setStatusNote(
+          err.error === "unsupported_file_type"
+            ? "Only PDF and DOCX files can be read. Fill in the fields manually."
+            : "This file could not be read. Fill in the fields manually.",
+        )
+        setPageState("review")
+        return
+      }
+
+      const preview: ExtractPreviewResponse = await res.json()
+      if (seq !== requestSeq.current) return
 
       setFormData({
-        title: extracted.title ?? titleCaseFromFilename(fileNameWithoutExt),
-        contractType: extracted.contractType ?? "",
-        counterpartyName: extracted.counterpartyName ?? "",
-        startDate: extracted.startDate?.slice(0, 10) ?? "",
-        endDate: extracted.endDate?.slice(0, 10) ?? "",
-        value: extracted.value != null ? String(extracted.value) : "",
-        currency: isCurrencyCode(extracted.currency)
-          ? extracted.currency!.trim().toUpperCase()
-          : "",
-        paymentTerms: extracted.paymentTerms ?? "",
-        autoRenewal: extracted.autoRenewal ?? false,
-        governingLaw: extracted.governingLaw ?? "",
-        description: extracted.description ?? "",
+        ...defaultFormData,
+        title: fallbackTitle,
+        ...prefillToFormPatch(preview.prefill, currencies.default),
       })
-      setConfidence(extracted.confidence ?? {})
-      setDocumentText(extracted.documentText || null)
-      setDocumentTextTruncated(Boolean(extracted.documentTextTruncated))
+      setConfidence(preview.confidence ?? {})
+      setDocumentText(preview.documentText || null)
+      setDocumentTextTruncated(Boolean(preview.documentTextTruncated))
+      setStatusNote(previewStatusMessage(preview.status))
+      setPageState("review")
 
-      if (extracted.error) {
-        toast.warning(
-          extracted.partial
-            ? "AI extraction partially failed — fill in missing fields manually."
-            : "AI extraction unavailable — please fill in fields manually.",
-        )
+      // Only worth a model call if there is something to read. A scanned
+      // document is picked up by the worker's OCR path after upload.
+      if (preview.status === "ok") {
+        void runAiPass(selectedFile, seq)
+      } else {
+        setAiState("unavailable")
       }
     } catch {
-      // Network or parse error — degrade gracefully, still go to review
-      toast.error("Could not reach AI extraction. Please fill in fields manually.")
-      setFormData((prev) => ({
-        ...prev,
-        title: titleCaseFromFilename(fileNameWithoutExt),
-      }))
+      if (seq !== requestSeq.current) return
+      setFormData({ ...defaultFormData, title: fallbackTitle })
       setConfidence({})
       setDocumentText(null)
       setDocumentTextTruncated(false)
+      setStatusNote("Could not read the document. Fill in the fields manually.")
+      setAiState("unavailable")
+      setPageState("review")
     }
-
-    setPageState("review")
   }
 
   function handleChangeFile() {
+    // Bump the sequence so an in-flight pass-2 response for the old file is
+    // dropped instead of overwriting the next one.
+    requestSeq.current++
+    userEdited.current = new Set()
     setFile(null)
     setFormData(defaultFormData)
     setConfidence({})
     setDocumentText(null)
     setDocumentTextTruncated(false)
+    setAiState("idle")
+    setStatusNote(null)
+    setCoverageNote(null)
     setPageState("upload")
   }
 
@@ -820,6 +963,9 @@ export default function NewContractPage() {
           formData={formData}
           confidence={confidence}
           submitting={submitting}
+          aiState={aiState}
+          statusNote={statusNote}
+          coverageNote={coverageNote}
           onFormChange={updateField}
           onToggleRenewal={toggleRenewal}
           onBack={handleChangeFile}

@@ -434,30 +434,81 @@ describe("POST /api/contracts/extract-preview", () => {
     expect(body.error).toBe("unsupported_file_type")
   })
 
-  it("returns partial result (ai_unavailable) when OPENAI_API_KEY is not set", async () => {
-    const saved = process.env.OPENAI_API_KEY
-    delete process.env.OPENAI_API_KEY
+  // Pass 1 makes no model call at all, so its result no longer depends on
+  // whether an AI provider is configured.
+  it("returns a deterministic prefill with no AI provider configured", async () => {
+    const pdfParse = (await import("pdf-parse")).default
+    vi.mocked(pdfParse).mockResolvedValueOnce({
+      text:
+        "MASTER SERVICES AGREEMENT. ".repeat(6) +
+        "Payment shall be due Net 45 days from invoice. " +
+        "This Agreement is governed by the laws of the State of Delaware. " +
+        "The total contract value is $250,000.00 payable annually.",
+    } as never)
 
     vi.mocked(resolveAuth).mockResolvedValueOnce(adminCtx)
     const { POST } = await import("@/app/api/contracts/extract-preview/route")
-    // Use PDF magic bytes so file type detection passes
     const pdfBytes = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34])
     const fd = new FormData()
-    fd.append("file", new File([pdfBytes], "test.pdf", { type: "application/pdf" }))
+    fd.append("file", new File([pdfBytes], "master-services.pdf", { type: "application/pdf" }))
     const res = await POST(makeFormRequest("http://localhost/api/contracts/extract-preview", fd))
+
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.partial).toBe(true)
-    expect(body.error).toBe("ai_unavailable")
+    expect(body.status).toBe("ok")
+    expect(body.prefill.title).toBe("Master Services")
+    expect(body.prefill.paymentTerms).toBe("Net 45")
+    expect(body.prefill.governingLaw).toBe("State of Delaware")
+    expect(body.prefill.value).toBe(250000)
+    expect(body.prefill.currency).toBe("USD")
+    // Heuristics must never look as trustworthy as a real extraction.
+    expect(body.confidence.governingLaw).toBeLessThan(0.5)
+  })
 
-    if (saved !== undefined) process.env.OPENAI_API_KEY = saved
+  // The regression this pipeline was built around: pdf-parse returns an empty
+  // string for a scanned page instead of throwing, and the old route fed that
+  // straight to the model and rendered the all-null result as a blank form.
+  it("reports no_text_layer instead of silently returning an empty prefill", async () => {
+    const pdfParse = (await import("pdf-parse")).default
+    vi.mocked(pdfParse).mockResolvedValueOnce({ text: "", numpages: 12 } as never)
+
+    vi.mocked(resolveAuth).mockResolvedValueOnce(adminCtx)
+    const { POST } = await import("@/app/api/contracts/extract-preview/route")
+    const pdfBytes = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34])
+    const fd = new FormData()
+    fd.append("file", new File([pdfBytes], "scanned.pdf", { type: "application/pdf" }))
+    const res = await POST(makeFormRequest("http://localhost/api/contracts/extract-preview", fd))
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.status).toBe("no_text_layer")
+    expect(body.pageCount).toBe(12)
+    // Still usable: the filename title lets the user save the contract.
+    expect(body.prefill.title).toBe("Scanned")
+  })
+
+  it("reports text_extraction_failed when the parser throws", async () => {
+    const pdfParse = (await import("pdf-parse")).default
+    vi.mocked(pdfParse).mockRejectedValueOnce(new Error("bad XRef entry"))
+
+    vi.mocked(resolveAuth).mockResolvedValueOnce(adminCtx)
+    const { POST } = await import("@/app/api/contracts/extract-preview/route")
+    const pdfBytes = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34])
+    const fd = new FormData()
+    fd.append("file", new File([pdfBytes], "corrupt.pdf", { type: "application/pdf" }))
+    const res = await POST(makeFormRequest("http://localhost/api/contracts/extract-preview", fd))
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.status).toBe("text_extraction_failed")
   })
 
   // The upload wizard shows this text beside the fields it pre-filled, and it
   // is the only thing a DOCX has to display — no browser renders one.
-  it("returns the extracted document text even when AI is unavailable", async () => {
-    const saved = process.env.OPENAI_API_KEY
-    delete process.env.OPENAI_API_KEY
+  it("returns the extracted document text for the preview dialog", async () => {
+    const pdfParse = (await import("pdf-parse")).default
+    const text = "This Agreement is entered into by the parties. ".repeat(10)
+    vi.mocked(pdfParse).mockResolvedValueOnce({ text } as never)
 
     vi.mocked(resolveAuth).mockResolvedValueOnce(adminCtx)
     const { POST } = await import("@/app/api/contracts/extract-preview/route")
@@ -466,18 +517,13 @@ describe("POST /api/contracts/extract-preview", () => {
     fd.append("file", new File([pdfBytes], "test.pdf", { type: "application/pdf" }))
     const res = await POST(makeFormRequest("http://localhost/api/contracts/extract-preview", fd))
     const body = await res.json()
-    expect(body.documentText).toBe("Extracted PDF text")
+    expect(body.documentText).toBe(text)
     expect(body.documentTextTruncated).toBe(false)
-
-    if (saved !== undefined) process.env.OPENAI_API_KEY = saved
   })
 
-  it("flags document text that hit the extractor's character cap", async () => {
-    const saved = process.env.OPENAI_API_KEY
-    delete process.env.OPENAI_API_KEY
-
+  it("flags document text that hit the preview character cap", async () => {
     const pdfParse = (await import("pdf-parse")).default
-    vi.mocked(pdfParse).mockResolvedValueOnce({ text: "x".repeat(9000) } as never)
+    vi.mocked(pdfParse).mockResolvedValueOnce({ text: "x".repeat(120_000) } as never)
 
     vi.mocked(resolveAuth).mockResolvedValueOnce(adminCtx)
     const { POST } = await import("@/app/api/contracts/extract-preview/route")
@@ -486,10 +532,48 @@ describe("POST /api/contracts/extract-preview", () => {
     fd.append("file", new File([pdfBytes], "test.pdf", { type: "application/pdf" }))
     const res = await POST(makeFormRequest("http://localhost/api/contracts/extract-preview", fd))
     const body = await res.json()
-    expect(body.documentText).toHaveLength(8000)
+    expect(body.documentText).toHaveLength(100_000)
     expect(body.documentTextTruncated).toBe(true)
+  })
+})
 
-    if (saved !== undefined) process.env.OPENAI_API_KEY = saved
+// ─── POST /api/contracts/extract-preview/ai ───────────────────────────────────
+// Pass 2: the background model call. resolveAiConfig is mocked to "no provider"
+// at the top of this file, so the default path here is the unavailable one.
+
+describe("POST /api/contracts/extract-preview/ai", () => {
+  beforeEach(() => { vi.clearAllMocks(); resetMockQueues() })
+
+  it("returns 401 when unauthenticated", async () => {
+    vi.mocked(resolveAuth).mockResolvedValueOnce(null)
+    const { POST } = await import("@/app/api/contracts/extract-preview/ai/route")
+    const fd = new FormData()
+    const res = await POST(makeFormRequest("http://localhost/api/contracts/extract-preview/ai", fd))
+    expect(res.status).toBe(401)
+  })
+
+  it("returns 400 when file has unsupported magic bytes", async () => {
+    vi.mocked(resolveAuth).mockResolvedValueOnce(adminCtx)
+    const { POST } = await import("@/app/api/contracts/extract-preview/ai/route")
+    const fd = new FormData()
+    fd.append("file", new File([Buffer.from("nope")], "x.txt", { type: "text/plain" }))
+    const res = await POST(makeFormRequest("http://localhost/api/contracts/extract-preview/ai", fd))
+    expect(res.status).toBe(400)
+  })
+
+  // Degrades to a usable form rather than an error — pass 1 already filled it.
+  it("reports ai_unavailable without failing the request", async () => {
+    vi.mocked(resolveAuth).mockResolvedValueOnce(adminCtx)
+    const { POST } = await import("@/app/api/contracts/extract-preview/ai/route")
+    const pdfBytes = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34])
+    const fd = new FormData()
+    fd.append("file", new File([pdfBytes], "test.pdf", { type: "application/pdf" }))
+    const res = await POST(makeFormRequest("http://localhost/api/contracts/extract-preview/ai", fd))
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.status).toBe("ai_unavailable")
+    expect(body.prefill).toEqual({})
   })
 })
 
