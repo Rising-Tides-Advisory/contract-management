@@ -93,7 +93,9 @@ export function UploadPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl h-[85vh] flex flex-col gap-4">
+      {/* sm:max-w-6xl, not max-w-6xl — DialogContent's own sm:max-w-sm would
+          otherwise win from the media query and pin this to 384px. */}
+      <DialogContent className="sm:max-w-6xl h-[85vh] flex flex-col gap-4">
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <FileText className="size-4 shrink-0" />
