@@ -109,6 +109,7 @@ import { getCrmProvider } from "@/lib/crm"
 import { ensureFreshToken } from "@/lib/crm/route-helpers"
 import { enqueueImportProcess } from "@/lib/types/import-queue"
 import { isZipBuffer } from "@/lib/types/import-helpers"
+import { contractExtractQueue, getContractAiExtractQueue } from "@/lib/jobs/queues"
 
 function resetMockQueues() {
   vi.mocked(resolveAuth).mockReset()
@@ -117,6 +118,10 @@ function resetMockQueues() {
   vi.mocked(getCrmProvider).mockReset()
   vi.mocked(enqueueImportProcess).mockResolvedValue(undefined)
   vi.mocked(isZipBuffer).mockReturnValue(false) // conservative default
+  vi.mocked(contractExtractQueue.add).mockResolvedValue(undefined as never)
+  vi.mocked(getContractAiExtractQueue).mockReturnValue({
+    add: vi.fn().mockResolvedValue(undefined),
+  } as never)
 }
 
 const adminCtx = {
@@ -300,13 +305,14 @@ describe("POST /api/contracts/[id]/extractions/rerun", () => {
     expect(res.status).toBe(404)
   })
 
-  it("returns 422 when contract has no extracted text", async () => {
+  it("returns 422 only when the contract has neither stored text nor a file", async () => {
     vi.mocked(resolveAuth).mockResolvedValueOnce(adminCtx)
     vi.mocked(prisma.contract.findUnique).mockResolvedValueOnce({
       id: "contract-1",
       organizationId: "org-1",
       extractedText: null,
     } as any)
+    vi.mocked(prisma.contractFile.findFirst).mockResolvedValueOnce(null)
     const { POST } = await import("@/app/api/contracts/[id]/extractions/rerun/route")
     const res = await POST(
       new Request("http://localhost/api/contracts/contract-1/extractions/rerun", { method: "POST" }),
@@ -314,7 +320,38 @@ describe("POST /api/contracts/[id]/extractions/rerun", () => {
     )
     expect(res.status).toBe(422)
     const body = await res.json()
-    expect(body.error).toBe("no_text")
+    expect(body.error).toBe("no_document")
+  })
+
+  // A contract created through the new-contract wizard carries seeded
+  // AIExtraction rows while Contract.extractedText stays null until the
+  // contract.extract worker runs. Re-run must re-read the stored file in that
+  // state instead of claiming the document is missing.
+  it("falls back to re-extracting the stored file when there is no stored text", async () => {
+    vi.mocked(resolveAuth).mockResolvedValueOnce(memberCtx)
+    vi.mocked(prisma.contract.findUnique).mockResolvedValueOnce({
+      id: "contract-1",
+      organizationId: "org-1",
+      extractedText: null,
+    } as any)
+    vi.mocked(prisma.contractFile.findFirst).mockResolvedValueOnce({
+      id: "file-1",
+      storageKey: "contracts/org-1/contract-1/files/file-1/lease.pdf",
+    } as any)
+    const { POST } = await import("@/app/api/contracts/[id]/extractions/rerun/route")
+    const res = await POST(
+      new Request("http://localhost/api/contracts/contract-1/extractions/rerun", { method: "POST" }),
+      { params: { id: "contract-1" } },
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({ queued: true, source: "file" })
+    expect(contractExtractQueue.add).toHaveBeenCalledWith("extract", {
+      contractId: "contract-1",
+      fileId: "file-1",
+      storageKey: "contracts/org-1/contract-1/files/file-1/lease.pdf",
+      force: true,
+    })
   })
 
   it("enqueues AI extraction and returns queued:true", async () => {
@@ -324,6 +361,8 @@ describe("POST /api/contracts/[id]/extractions/rerun", () => {
       organizationId: "org-1",
       extractedText: "Full contract text...",
     } as any)
+    const aiAdd = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(getContractAiExtractQueue).mockReturnValueOnce({ add: aiAdd } as any)
     const { POST } = await import("@/app/api/contracts/[id]/extractions/rerun/route")
     const res = await POST(
       new Request("http://localhost/api/contracts/contract-1/extractions/rerun", { method: "POST" }),
@@ -332,6 +371,14 @@ describe("POST /api/contracts/[id]/extractions/rerun", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.queued).toBe(true)
+    // force:true — a manual re-run must refresh rows a human already accepted,
+    // otherwise the button does nothing on a fully reviewed contract.
+    expect(aiAdd).toHaveBeenCalledWith("ai_extract", {
+      contractId: "contract-1",
+      extractedText: "Full contract text...",
+      force: true,
+    })
+    expect(contractExtractQueue.add).not.toHaveBeenCalled()
   })
 
   it("returns 404 when contract belongs to a different org (org isolation)", async () => {

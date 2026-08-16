@@ -295,18 +295,20 @@ function getTextLimitForProvider(): number {
 const extractWorker = new Worker<ContractExtractJobData>(
   "contract.extract",
   async (job: Job<ContractExtractJobData>) => {
-    const { contractId, fileId, storageKey } = job.data
+    const { contractId, fileId, storageKey, force } = job.data
 
-    logger.info({ jobId: job.id, contractId, fileId }, "[extract] processing job")
+    logger.info({ jobId: job.id, contractId, fileId, force: !!force }, "[extract] processing job")
 
     // Idempotency guard: if a previous run already extracted text and kicked
     // off the embed step, a retry would duplicate Activity rows and re-enqueue
     // contract.embed. Re-enqueue embed only if no embedding exists yet.
+    // A forced run (manual "Re-run Extraction") skips the guard — the user is
+    // explicitly asking for the document to be read again.
     const existingContract = await getWorkerPrisma().contract.findUnique({
       where: { id: contractId },
       select: { extractedText: true },
     })
-    if (existingContract?.extractedText) {
+    if (!force && existingContract?.extractedText) {
       logger.info({ contractId }, "[extract] contract already has extracted text — skipping")
       return
     }
@@ -394,7 +396,7 @@ const extractWorker = new Worker<ContractExtractJobData>(
       // 5. Enqueue embedding job. Spec: extract → embed → ai_extract. The
       // embed worker chains ai_extract once embeddings land so semantic search
       // is always populated even when the LLM extractor fails or is missing.
-      await contractEmbedQueue.add("embed", { contractId, extractedText })
+      await contractEmbedQueue.add("embed", { contractId, extractedText, force })
       logger.info({ contractId }, "[extract] enqueued embed job")
     } else {
       // Silent failures (typically scanned/image PDFs) used to disappear into
@@ -496,9 +498,9 @@ async function callExtractionLLM(text: string): Promise<string | null> {
 const aiExtractWorker = new Worker<ContractAiExtractJobData>(
   "contract.ai_extract",
   async (job: Job<ContractAiExtractJobData>) => {
-    const { contractId, extractedText } = job.data
+    const { contractId, extractedText, force } = job.data
 
-    logger.info({ jobId: job.id, contractId }, "[ai_extract] processing job")
+    logger.info({ jobId: job.id, contractId, force: !!force }, "[ai_extract] processing job")
 
     const limit = getTextLimitForProvider()
     const textToAnalyze =
@@ -621,8 +623,16 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
     const db = getWorkerPrisma()
     // Two-step write: createMany skipDuplicates inserts only fields with no
     // prior row, then updateMany refreshes the rest — but only when the row
-    // is NOT accepted. Without the status guard a re-run would clobber a
-    // human-reviewed value back to "pending" and overwrite their edits.
+    // is NOT accepted. Without the status guard a pipeline re-run would clobber
+    // a human-reviewed value back to "pending" and overwrite their edits.
+    //
+    // A forced run drops the guard. It only comes from the manual "Re-run
+    // Extraction" action, where refusing to touch accepted rows makes the whole
+    // operation invisible on a contract that has already been reviewed. The
+    // refreshed rows land back in "pending" for re-review; the canonical
+    // Contract columns keep the previously accepted values until the user
+    // accepts the new ones.
+    const statusGuard = force ? {} : { status: { not: "accepted" } }
     await db.aIExtraction.createMany({
       data: fieldData.map(({ field, data }) => ({
         contractId,
@@ -639,7 +649,7 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
 
     for (const { field, data } of fieldData) {
       await db.aIExtraction.updateMany({
-        where: { contractId, field, status: { not: "accepted" } },
+        where: { contractId, field, ...statusGuard },
         data: {
           rawValue: String(data.value),
           confidence: data.confidence,
@@ -678,7 +688,7 @@ aiExtractWorker.on("failed", (job, err) =>
 const embedWorker = new Worker<ContractEmbedJobData>(
   "contract.embed",
   async (job: Job<ContractEmbedJobData>) => {
-    const { contractId, extractedText } = job.data
+    const { contractId, extractedText, force } = job.data
 
     logger.info({ jobId: job.id, contractId }, "[embed] processing job")
 
@@ -688,7 +698,7 @@ const embedWorker = new Worker<ContractEmbedJobData>(
     // embedding provider is down or unconfigured.
     const chainAiExtract = () =>
       contractAiExtractQueue
-        .add("ai_extract", { contractId, extractedText })
+        .add("ai_extract", { contractId, extractedText, force })
         .catch((err) =>
           logger.error({ err, contractId }, "[embed] failed to enqueue ai_extract"),
         )

@@ -9,15 +9,24 @@ const connection = {
 
 // ─── Job data types ────────────────────────────────────────────────────────────
 
+/**
+ * `force` marks a run the user asked for by hand (the "Re-run Extraction"
+ * button) rather than one the upload pipeline kicked off. It travels the whole
+ * extract → embed → ai_extract chain: the extract worker re-reads the file even
+ * when text is already stored, and the ai_extract worker refreshes extraction
+ * rows a human has already accepted instead of leaving them untouched.
+ */
 export interface ContractExtractJobData {
   contractId: string
   fileId: string
   storageKey: string
+  force?: boolean
 }
 
 export interface ContractAiExtractJobData {
   contractId: string
   extractedText: string
+  force?: boolean
 }
 
 export interface AlertsCheckJobData {
@@ -52,6 +61,7 @@ export interface ImportProcessJobData {
 export interface ContractEmbedJobData {
   contractId: string
   extractedText: string
+  force?: boolean
 }
 
 export interface SigningSyncJobData {
