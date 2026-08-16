@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import {
   LayoutDashboard, FileText, Settings, Plus, LogOut,
-  Search
+  Search, RefreshCw, Layers, Target, BarChart3, Plug, CreditCard,
 } from "lucide-react"
 import {
   CommandDialog,
@@ -27,11 +27,22 @@ interface SearchResult {
   createdAt: string
 }
 
+// Absorbed from the former components/command-palette.tsx, a second palette
+// that also bound ⌘K and rendered on top of this one. It searched only its own
+// hardcoded labels plus the three most recent contracts, so any real query
+// ("telus") hit "No results found" while this palette's answer sat hidden
+// underneath. One palette now, with the fuller destination list it had.
 const NAV_COMMANDS = [
-  { label: "Go to Dashboard", href: "/dashboard",     icon: LayoutDashboard },
-  { label: "Go to Contracts", href: "/contracts",     icon: FileText },
-  { label: "Go to Search",    href: "/search",        icon: Search },
-  { label: "Go to Settings",  href: "/settings/org",  icon: Settings },
+  { label: "Go to Dashboard",    href: "/dashboard",              icon: LayoutDashboard },
+  { label: "Go to Contracts",    href: "/contracts",              icon: FileText },
+  { label: "Go to Renewals",     href: "/renewals",               icon: RefreshCw },
+  { label: "Go to Templates",    href: "/templates",              icon: Layers },
+  { label: "Go to Obligations",  href: "/obligations",            icon: Target },
+  { label: "Go to Analytics",    href: "/analytics",              icon: BarChart3 },
+  { label: "Go to Search",       href: "/search",                 icon: Search },
+  { label: "Go to Integrations", href: "/settings/integrations",  icon: Plug },
+  { label: "Go to Billing",      href: "/settings/billing",       icon: CreditCard },
+  { label: "Go to Settings",     href: "/settings/org",           icon: Settings },
 ] as const
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -195,6 +206,15 @@ export function CmdK() {
             >
               <Plus className="mr-2 h-4 w-4" />
               New Contract
+            </CommandItem>
+          )}
+          {matchesQuery("New from Template") && (
+            <CommandItem
+              value="New from Template"
+              onSelect={() => run(() => router.push("/templates"))}
+            >
+              <Layers className="mr-2 h-4 w-4" />
+              New from Template
             </CommandItem>
           )}
           {/* Always available — the escape hatch to full search with filters. */}
