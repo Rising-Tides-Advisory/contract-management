@@ -20,7 +20,16 @@ vi.mock("@/lib/jobs/queues", () => ({
   importProcessQueue: { add: vi.fn().mockResolvedValue(undefined), close: vi.fn() },
   obligationExtractQueue: { add: vi.fn().mockResolvedValue(undefined), close: vi.fn() },
   getObligationExtractQueue: vi.fn(() => ({ getJob: vi.fn().mockResolvedValue(null) })),
-  getContractAiExtractQueue: vi.fn(() => ({ add: vi.fn().mockResolvedValue(undefined) })),
+  // getWorkersCount backs the "is a worker actually consuming this queue?"
+  // probe; default to one so routes behave as they do on a healthy stack.
+  getContractAiExtractQueue: vi.fn(() => ({
+    add: vi.fn().mockResolvedValue(undefined),
+    getWorkersCount: vi.fn().mockResolvedValue(1),
+  })),
+  getContractExtractQueue: vi.fn(() => ({
+    add: vi.fn().mockResolvedValue(undefined),
+    getWorkersCount: vi.fn().mockResolvedValue(1),
+  })),
 }))
 
 vi.mock("@/lib/db/client", () => {

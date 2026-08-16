@@ -99,15 +99,17 @@ interface AIExtraction {
 }
 
 /**
- * Identity of the current result set. A re-run rewrites rows in place rather
- * than adding new ones, so "did the worker finish?" can only be answered by
- * comparing contents — row count stays the same.
+ * The extract → embed → ai_extract pipeline records how far it got on each
+ * activity row it writes. "text" is a waypoint; anything at the "ai" stage —
+ * or any stage that gave up — is a finished run, including the runs that
+ * legitimately change nothing (no AI provider, a scanned PDF, a model that
+ * found no fields). Waiting on this rather than on the extraction rows is what
+ * keeps a re-run from spinning through a run that produced no new values.
  */
-function extractionSignature(list: AIExtraction[]): string {
-  return list
-    .map((e) => `${e.id}:${e.status}:${e.rawValue ?? ""}:${e.updatedAt ?? ""}`)
-    .sort()
-    .join("|")
+function isPipelineOutcome(activity: Activity & { metadata?: unknown }): boolean {
+  if (activity.action !== "METADATA_EXTRACTED") return false
+  const meta = activity.metadata as { stage?: string; skipped?: boolean } | null | undefined
+  return meta?.stage === "ai" || meta?.skipped === true
 }
 
 const ALL_STATUSES: ContractStatus[] = [
@@ -309,9 +311,9 @@ export default function ContractDetailPage() {
   const [extractions, setExtractions] = useState<AIExtraction[]>([])
   const [extractionPolling, setExtractionPolling] = useState(false)
   const extractionPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  // Signature of the rows as they were when a manual re-run was queued; non-null
-  // while we wait for the worker to rewrite them.
-  const [rerunSignature, setRerunSignature] = useState<string | null>(null)
+  // Server timestamp of the activity row a manual re-run wrote; non-null while
+  // we wait for the pipeline to report back after it.
+  const [rerunSince, setRerunSince] = useState<string | null>(null)
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [obligations, setObligations] = useState<Obligation[]>([])
   const [riskData, setRiskData] = useState<{
@@ -456,33 +458,49 @@ export default function ContractDetailPage() {
 
   // ── Manual re-run polling ─────────────────────────────────────────────────
   // The poll above only fires while the tab is empty, so it never covers a
-  // re-run on a contract that already has rows. Watch the row contents instead
-  // and stop as soon as the worker's rewrite lands (or after ~90 s).
+  // re-run on a contract that already has rows. Wait on the pipeline's own
+  // outcome row instead, and always land on a message — a run that finishes
+  // having changed nothing has to say so, or the button just spins.
   useEffect(() => {
-    if (rerunSignature === null) return
+    if (rerunSince === null) return
     let attempts = 0
     const MAX = 22 // 22 × 4 s ≈ 88 s ceiling
 
     const interval = setInterval(async () => {
       attempts++
       try {
-        const res = await fetch(`/api/contracts/${id}/extractions`)
+        const res = await fetch(`/api/contracts/${id}/activity?limit=10`)
         if (res.ok) {
           const data = await res.json()
-          const next: AIExtraction[] = data.extractions ?? []
-          if (next.length > 0 && extractionSignature(next) !== rerunSignature) {
-            setExtractions(next)
-            setRerunSignature(null)
+          const outcome = (data.activities ?? []).find(
+            (a: Activity) => isPipelineOutcome(a) && a.createdAt > rerunSince,
+          )
+          if (outcome) {
+            setRerunSince(null)
+            const skipped =
+              (outcome.metadata as { skipped?: boolean } | null | undefined)?.skipped === true
+            if (skipped) {
+              toast.error(outcome.detail ?? "Extraction finished without producing fields")
+            } else {
+              toast.success(outcome.detail ?? "Extraction complete")
+            }
+            fetchContract()
             return
           }
         }
       } catch { /* network hiccup — keep polling */ }
 
-      if (attempts >= MAX) setRerunSignature(null)
+      if (attempts >= MAX) {
+        setRerunSince(null)
+        toast.error(
+          "Extraction is still queued after 90s — the background worker may not be processing jobs.",
+          { duration: 8000 },
+        )
+      }
     }, 4000)
 
     return () => clearInterval(interval)
-  }, [rerunSignature, id])
+  }, [rerunSince, id, fetchContract])
 
   // Only the moves with consequences stop for confirmation — stepping forward
   // through the workflow stays a single click.
@@ -633,23 +651,31 @@ export default function ContractDetailPage() {
   }
 
   async function handleRerunExtraction() {
-    const before = extractionSignature(extractions)
     try {
       const res = await fetch(`/api/contracts/${id}/extractions/rerun`, { method: "POST" })
+      const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
         toast.error(body?.message ?? "Failed to re-run extraction")
         return
       }
-      const body = await res.json().catch(() => ({}))
+      // The job is queued either way and will run whenever a worker comes up,
+      // but with nothing consuming the queue there is no point sitting on a
+      // spinner for 90 s — name the actual problem instead.
+      if (body?.workerOnline === false) {
+        toast.error(
+          "Queued, but no background worker is connected — results won't appear until one is running (pnpm worker:dev).",
+          { duration: 10000 },
+        )
+        return
+      }
       toast.success(
         body?.source === "file"
           ? "Re-reading the document — results will appear in under a minute"
           : "AI extraction queued — results will appear in ~30s",
       )
       // Keep the existing rows on screen; the worker rewrites them in place, so
-      // wait for the contents to change rather than blanking the tab.
-      setRerunSignature(before)
+      // wait for the pipeline to report back rather than blanking the tab.
+      if (body?.since) setRerunSince(body.since)
     } catch {
       toast.error("Failed to re-run extraction")
     }
@@ -1432,12 +1458,12 @@ export default function ContractDetailPage() {
                       size="sm"
                       variant="outline"
                       onClick={handleRerunExtraction}
-                      disabled={rerunSignature !== null}
+                      disabled={rerunSince !== null}
                     >
                       <RefreshCw
-                        className={cn("size-3.5", rerunSignature !== null && "animate-spin")}
+                        className={cn("size-3.5", rerunSince !== null && "animate-spin")}
                       />
-                      {rerunSignature !== null ? "Re-running…" : "Re-run Extraction"}
+                      {rerunSince !== null ? "Re-running…" : "Re-run Extraction"}
                     </Button>
                   </div>
                 </div>

@@ -365,6 +365,11 @@ const extractWorker = new Worker<ContractExtractJobData>(
           actorLabel: "System",
           action: "METADATA_EXTRACTED",
           detail: `Text extracted from ${contractFile.filename}${isOcrExtracted ? " (via OCR)" : ""}`,
+          // stage marks how far the extract → embed → ai_extract pipeline got.
+          // "text" is a waypoint, "ai" is terminal; the contract detail page
+          // waits on the terminal row (or any skipped one) to know a manual
+          // re-run has finished.
+          metadata: { stage: "text", isOcrExtracted },
         },
       })
 
@@ -385,7 +390,7 @@ const extractWorker = new Worker<ContractExtractJobData>(
           actorLabel: "System",
           action: "METADATA_EXTRACTED",
           detail: "Text extraction failed — document may be a scanned image",
-          metadata: { skipped: true, reason: "empty_text" },
+          metadata: { stage: "text", skipped: true, reason: "empty_text" },
         },
       })
     }
@@ -516,6 +521,9 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
 
     logger.info({ jobId: job.id, contractId, force: !!force }, "[ai_extract] processing job")
 
+    // stage marks how far the extract → embed → ai_extract pipeline got. "ai"
+    // is terminal, so the contract detail page can tell a finished re-run from
+    // one still in flight — including the runs that end with nothing changed.
     const skip = (detail: string, reason: string) =>
       getWorkerPrisma().activity.create({
         data: {
@@ -524,7 +532,7 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
           actorLabel: "System",
           action: "METADATA_EXTRACTED",
           detail,
-          metadata: { skipped: true, reason },
+          metadata: { stage: "ai", skipped: true, reason },
         },
       })
 
@@ -659,6 +667,10 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
 
     if (fieldData.length === 0) {
       logger.info({ contractId }, "[ai_extract] no fields extracted")
+      // The model answered but found nothing to extract. This used to return
+      // silently, which left anyone watching a manual re-run with no signal
+      // that the run had finished at all.
+      await skip("AI extraction returned no fields", "no_fields")
       return
     }
 
@@ -715,6 +727,8 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
         action: "METADATA_EXTRACTED",
         detail: `AI extracted ${fieldData.length} fields${coverage}`,
         metadata: {
+          stage: "ai",
+          forced: !!force,
           mode: plan.mode,
           pageCount: planDoc.pageCount,
           pagesAnalyzed: plan.pagesAnalyzed,
