@@ -390,6 +390,11 @@ const extractWorker = new Worker<ContractExtractJobData>(
           actorLabel: "System",
           action: "METADATA_EXTRACTED",
           detail: `Text extracted from ${contractFile.filename}${isOcrExtracted ? " (via OCR)" : ""}`,
+          // stage marks how far the extract → embed → ai_extract pipeline got.
+          // "text" is a waypoint, "ai" is terminal; the contract detail page
+          // waits on the terminal row (or any skipped one) to know a manual
+          // re-run has finished.
+          metadata: { stage: "text", isOcrExtracted },
         },
       })
 
@@ -410,7 +415,7 @@ const extractWorker = new Worker<ContractExtractJobData>(
           actorLabel: "System",
           action: "METADATA_EXTRACTED",
           detail: "Text extraction failed — document may be a scanned image",
-          metadata: { skipped: true, reason: "empty_text" },
+          metadata: { stage: "text", skipped: true, reason: "empty_text" },
         },
       })
     }
@@ -524,7 +529,7 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
             actorLabel: "System",
             action: "METADATA_EXTRACTED",
             detail: "AI extraction skipped — no AI provider configured",
-            metadata: { skipped: true, reason: "no_provider" },
+            metadata: { stage: "ai", skipped: true, reason: "no_provider" },
           },
         })
         return
@@ -539,7 +544,7 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
           actorLabel: "System",
           action: "METADATA_EXTRACTED",
           detail: `AI extraction failed: ${(err as Error)?.message ?? String(err)}`,
-          metadata: { skipped: true, reason: "llm_error" },
+          metadata: { stage: "ai", skipped: true, reason: "llm_error" },
         },
       })
       return
@@ -566,7 +571,7 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
           actorLabel: "System",
           action: "METADATA_EXTRACTED",
           detail: "AI extraction failed: invalid JSON response",
-          metadata: { skipped: true, reason: "parse_error" },
+          metadata: { stage: "ai", skipped: true, reason: "parse_error" },
         },
       })
       return
@@ -617,6 +622,19 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
 
     if (fieldData.length === 0) {
       logger.info({ contractId }, "[ai_extract] no fields extracted")
+      // The model answered but found nothing to extract. This used to return
+      // silently, which left anyone watching a manual re-run with no signal
+      // that the run had finished at all.
+      await getWorkerPrisma().activity.create({
+        data: {
+          contractId,
+          userId: null,
+          actorLabel: "System",
+          action: "METADATA_EXTRACTED",
+          detail: "AI extraction returned no fields",
+          metadata: { stage: "ai", skipped: true, reason: "no_fields" },
+        },
+      })
       return
     }
 
@@ -662,7 +680,14 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
     }
 
     await getWorkerPrisma().activity.create({
-      data: { contractId, userId: null, actorLabel: "System", action: "METADATA_EXTRACTED", detail: `AI extracted ${fieldData.length} fields` },
+      data: {
+        contractId,
+        userId: null,
+        actorLabel: "System",
+        action: "METADATA_EXTRACTED",
+        detail: `AI extracted ${fieldData.length} fields`,
+        metadata: { stage: "ai", fields: fieldData.length, forced: !!force },
+      },
     })
 
     logger.info(

@@ -3,7 +3,11 @@ import { requireRole } from "@/lib/auth/roles"
 import { requestContext } from "@/lib/context"
 import { prisma } from "@/lib/db/client"
 import { writeActivity } from "@/lib/db/activity"
-import { contractExtractQueue, getContractAiExtractQueue } from "@/lib/jobs/queues"
+import {
+  contractExtractQueue,
+  getContractAiExtractQueue,
+  getContractExtractQueue,
+} from "@/lib/jobs/queues"
 import { rateLimit, rateLimitResponse } from "@/lib/rate-limit"
 import { logger } from "@/lib/logger"
 
@@ -30,6 +34,33 @@ import { logger } from "@/lib/logger"
 // silent no-op on any contract whose fields have all been reviewed. Canonical
 // Contract columns are left alone; they keep the accepted values until the user
 // accepts the new ones.
+
+/**
+ * Best-effort "is anyone going to run this?" probe.
+ *
+ * Enqueuing always succeeds — BullMQ is happy to accept a job no worker will
+ * ever pick up — and a stopped worker is the most common self-host failure
+ * mode, so without this the UI has nothing to distinguish "processing" from
+ * "processing forever". Returns null when the answer is unknown (Redis
+ * providers that disallow CLIENT LIST, an older queue stub in tests); only a
+ * confident zero is reported as offline.
+ */
+async function countWorkers(
+  getQueue: () => { getWorkersCount?: () => Promise<number> },
+): Promise<number | null> {
+  try {
+    const queue = getQueue()
+    if (typeof queue?.getWorkersCount !== "function") return null
+    return await queue.getWorkersCount()
+  } catch (err) {
+    logger.warn({ err }, "[extractions/rerun] worker liveness probe unavailable")
+    return null
+  }
+}
+
+function workerOnline(count: number | null): boolean | null {
+  return count === null ? null : count > 0
+}
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const ctx = await resolveAuth(req)
@@ -60,14 +91,22 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         force: true,
       })
 
-      await writeActivity(
+      const activity = await writeActivity(
         params.id,
         ctx.userId,
         "METADATA_EXTRACTED",
         "AI extraction re-triggered manually",
       )
 
-      return Response.json({ queued: true, source: "stored_text" })
+      // `since` is this row's server timestamp. The client watches the activity
+      // feed for the pipeline's own terminal row landing after it, which is the
+      // only signal that covers a run finishing with nothing changed.
+      return Response.json({
+        queued: true,
+        source: "stored_text",
+        since: activity.createdAt,
+        workerOnline: workerOnline(await countWorkers(getContractAiExtractQueue)),
+      })
     }
 
     // No stored text — fall back to the document itself.
@@ -96,13 +135,18 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       force: true,
     })
 
-    await writeActivity(
+    const activity = await writeActivity(
       params.id,
       ctx.userId,
       "METADATA_EXTRACTED",
       "Text + AI extraction re-triggered manually from the stored document",
     )
 
-    return Response.json({ queued: true, source: "file" })
+    return Response.json({
+      queued: true,
+      source: "file",
+      since: activity.createdAt,
+      workerOnline: workerOnline(await countWorkers(getContractExtractQueue)),
+    })
   })
 }

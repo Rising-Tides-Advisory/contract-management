@@ -27,7 +27,12 @@ vi.mock("@/lib/auth/middleware", () => ({
 }))
 
 vi.mock("@/lib/db/activity", () => ({
-  writeActivity: vi.fn().mockResolvedValue(undefined),
+  // Returns the created row — the re-run route hands its createdAt back to the
+  // client as the cursor it waits on.
+  writeActivity: vi.fn().mockResolvedValue({
+    id: "activity-1",
+    createdAt: "2026-08-16T04:00:00.000Z",
+  }),
 }))
 
 vi.mock("@/lib/context", () => ({
@@ -121,6 +126,7 @@ function resetMockQueues() {
   vi.mocked(contractExtractQueue.add).mockResolvedValue(undefined as never)
   vi.mocked(getContractAiExtractQueue).mockReturnValue({
     add: vi.fn().mockResolvedValue(undefined),
+    getWorkersCount: vi.fn().mockResolvedValue(1),
   } as never)
 }
 
@@ -345,7 +351,11 @@ describe("POST /api/contracts/[id]/extractions/rerun", () => {
     )
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body).toMatchObject({ queued: true, source: "file" })
+    expect(body).toMatchObject({
+      queued: true,
+      source: "file",
+      since: "2026-08-16T04:00:00.000Z",
+    })
     expect(contractExtractQueue.add).toHaveBeenCalledWith("extract", {
       contractId: "contract-1",
       fileId: "file-1",
@@ -362,7 +372,7 @@ describe("POST /api/contracts/[id]/extractions/rerun", () => {
       extractedText: "Full contract text...",
     } as any)
     const aiAdd = vi.fn().mockResolvedValue(undefined)
-    vi.mocked(getContractAiExtractQueue).mockReturnValueOnce({ add: aiAdd } as any)
+    vi.mocked(getContractAiExtractQueue).mockReturnValue({ add: aiAdd } as any)
     const { POST } = await import("@/app/api/contracts/[id]/extractions/rerun/route")
     const res = await POST(
       new Request("http://localhost/api/contracts/contract-1/extractions/rerun", { method: "POST" }),
@@ -379,6 +389,50 @@ describe("POST /api/contracts/[id]/extractions/rerun", () => {
       force: true,
     })
     expect(contractExtractQueue.add).not.toHaveBeenCalled()
+  })
+
+  // BullMQ accepts a job whether or not anything is listening, so a stopped
+  // worker is indistinguishable from a slow one unless the route says so.
+  it("reports workerOnline:false when no worker is consuming the queue", async () => {
+    vi.mocked(resolveAuth).mockResolvedValueOnce(memberCtx)
+    vi.mocked(prisma.contract.findUnique).mockResolvedValueOnce({
+      id: "contract-1",
+      organizationId: "org-1",
+      extractedText: "Full contract text...",
+    } as any)
+    vi.mocked(getContractAiExtractQueue).mockReturnValue({
+      add: vi.fn().mockResolvedValue(undefined),
+      getWorkersCount: vi.fn().mockResolvedValue(0),
+    } as never)
+    const { POST } = await import("@/app/api/contracts/[id]/extractions/rerun/route")
+    const res = await POST(
+      new Request("http://localhost/api/contracts/contract-1/extractions/rerun", { method: "POST" }),
+      { params: { id: "contract-1" } },
+    )
+    expect(res.status).toBe(200)
+    // Still queued — the job runs whenever a worker comes up.
+    expect(await res.json()).toMatchObject({ queued: true, workerOnline: false })
+  })
+
+  it("reports workerOnline:null when the liveness probe is unavailable", async () => {
+    vi.mocked(resolveAuth).mockResolvedValueOnce(memberCtx)
+    vi.mocked(prisma.contract.findUnique).mockResolvedValueOnce({
+      id: "contract-1",
+      organizationId: "org-1",
+      extractedText: "Full contract text...",
+    } as any)
+    vi.mocked(getContractAiExtractQueue).mockReturnValue({
+      add: vi.fn().mockResolvedValue(undefined),
+      getWorkersCount: vi.fn().mockRejectedValue(new Error("CLIENT LIST unavailable")),
+    } as never)
+    const { POST } = await import("@/app/api/contracts/[id]/extractions/rerun/route")
+    const res = await POST(
+      new Request("http://localhost/api/contracts/contract-1/extractions/rerun", { method: "POST" }),
+      { params: { id: "contract-1" } },
+    )
+    expect(res.status).toBe(200)
+    // Unknown must never be reported as offline — the UI would cry wolf.
+    expect(await res.json()).toMatchObject({ queued: true, workerOnline: null })
   })
 
   it("returns 404 when contract belongs to a different org (org isolation)", async () => {
