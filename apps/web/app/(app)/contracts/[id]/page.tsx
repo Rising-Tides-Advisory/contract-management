@@ -124,6 +124,16 @@ const STATUS_DOT: Record<ContractStatus, string> = {
   ARCHIVED:            "bg-zinc-300",
 }
 
+// Mirrors the rule enforced in PATCH /api/contracts/[id]: moving a contract
+// that already cleared approvals back into the drafting/review stages resets
+// its approvals to pending, so it has to be signed off again.
+const POST_APPROVAL_STATUSES: ContractStatus[] = ["AWAITING_SIGNATURE", "ACTIVE", "EXPIRED", "TERMINATED"]
+const PRE_APPROVAL_STATUSES: ContractStatus[] = ["DRAFT", "INTERNAL_REVIEW", "PENDING_APPROVAL"]
+
+function requiresReapproval(from: ContractStatus, to: ContractStatus): boolean {
+  return POST_APPROVAL_STATUSES.includes(from) && PRE_APPROVAL_STATUSES.includes(to)
+}
+
 const CONTRACT_TYPES = ["NDA", "MSA", "SOW", "EMPLOYMENT", "VENDOR", "CUSTOMER", "OTHER"] as const
 
 function formatBytes(bytes: number) {
@@ -314,6 +324,7 @@ export default function ContractDetailPage() {
   const [tagInput, setTagInput] = useState("")
   const [addingTag, setAddingTag] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
+  const [pendingStatus, setPendingStatus] = useState<ContractStatus | null>(null)
   const [archiving, setArchiving] = useState(false)
   const fetchContract = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -427,7 +438,21 @@ export default function ContractDetailPage() {
     }
   }, [loading, extractions.length, files.length, id])
 
+  // Only the moves with consequences stop for confirmation — stepping forward
+  // through the workflow stays a single click.
+  function requestStatusChange(newStatus: ContractStatus) {
+    const from = contract?.status
+    const needsConfirm =
+      !!from &&
+      (requiresReapproval(from, newStatus) ||
+        newStatus === "ARCHIVED" ||
+        newStatus === "TERMINATED")
+    if (needsConfirm) setPendingStatus(newStatus)
+    else changeStatus(newStatus)
+  }
+
   async function changeStatus(newStatus: ContractStatus) {
+    setPendingStatus(null)
     try {
       const res = await fetch(`/api/contracts/${id}`, {
         method: "PATCH",
@@ -808,7 +833,7 @@ export default function ContractDetailPage() {
                     return (
                       <DropdownMenuItem
                         key={s}
-                        onClick={() => changeStatus(s)}
+                        onClick={() => requestStatusChange(s)}
                         className="flex items-start gap-3 rounded-[calc(var(--radius)-2px)] px-2.5 py-2.5 cursor-pointer"
                       >
                         <span className={cn("mt-[3px] size-2.5 rounded-full shrink-0 ring-2 ring-offset-1 ring-offset-background", dot, dot.replace("bg-", "ring-"))} />
@@ -2225,6 +2250,68 @@ export default function ContractDetailPage() {
 
         </DialogContent>
       </Dialog>
+
+      {/* Status change confirmation — spells out the side effects of reopening
+          a signed-off contract or closing one out. */}
+      <AlertDialog
+        open={pendingStatus !== null}
+        onOpenChange={(open) => { if (!open) setPendingStatus(null) }}
+      >
+        <AlertDialogContent>
+          {pendingStatus && (() => {
+            const reopening = requiresReapproval(contract.status, pendingStatus)
+            const decidedApprovals = approvals.filter(
+              (a) => a.status === "approved" || a.status === "rejected",
+            ).length
+            return (
+              <>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    Move to {tStatuses(pendingStatus)}?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription render={<div />}>
+                    <div className="space-y-2 text-sm">
+                      <p>
+                        This contract is currently {tStatuses(contract.status)}.
+                      </p>
+                      {reopening && (
+                        <p>
+                          Reopening it invalidates the sign-off it already has.
+                          {decidedApprovals > 0
+                            ? ` ${decidedApprovals} decided approval${decidedApprovals === 1 ? "" : "s"} will be reset to pending, so the contract has to be approved again before it can go back to signing.`
+                            : " It will need to go through approval again before it can return to signing."}
+                        </p>
+                      )}
+                      {pendingStatus === "ARCHIVED" && (
+                        <p>
+                          Archived contracts are hidden from lists and search.
+                          You can unarchive it back to Draft later.
+                        </p>
+                      )}
+                      {pendingStatus === "TERMINATED" && (
+                        <p>
+                          Marking it terminated records the contract as ended.
+                          You can change the status again afterwards if this was
+                          a mistake.
+                        </p>
+                      )}
+                      <p className="text-muted-foreground">
+                        The change is recorded in the activity log.
+                      </p>
+                    </div>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => changeStatus(pendingStatus)}>
+                    {reopening ? "Reopen contract" : `Move to ${tStatuses(pendingStatus)}`}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </>
+            )
+          })()}
+        </AlertDialogContent>
+      </AlertDialog>
 
       <DocumentViewerDialog
         contractId={id}

@@ -18,7 +18,7 @@ function Command({
     <CommandPrimitive
       data-slot="command"
       className={cn(
-        "flex size-full flex-col overflow-hidden rounded-xl! bg-white p-1 text-zinc-900",
+        "flex size-full flex-col overflow-hidden rounded-xl! bg-popover p-1 text-popover-foreground",
         className
       )}
       {...props}
@@ -27,12 +27,19 @@ function Command({
 }
 
 // Plain overlay implementation — avoids cmdk + Base UI Dialog subscribe() incompatibility.
+//
+// The overlay markup replaces the Dialog, but `children` still has to sit
+// inside a cmdk <Command> root: CommandInput/List/Item all read cmdk's store
+// from context, and without the provider the first render throws and takes the
+// whole app down to the root error boundary. Rendering the root here — rather
+// than expecting every caller to add one — keeps CommandDialog self-contained.
 function CommandDialog({
   title = "Command Palette",
   children,
   className,
   open,
   onOpenChange,
+  shouldFilter,
 }: {
   title?: string
   description?: string
@@ -41,6 +48,8 @@ function CommandDialog({
   open?: boolean
   onOpenChange?: (open: boolean) => void
   children: React.ReactNode
+  /** Pass false when results are already filtered server-side. */
+  shouldFilter?: boolean
 }) {
   React.useEffect(() => {
     if (!open) return
@@ -66,11 +75,11 @@ function CommandDialog({
         aria-label={title}
         aria-modal="true"
         className={cn(
-          "relative z-50 w-full max-w-lg overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-2xl",
+          "relative z-50 w-full max-w-lg overflow-hidden rounded-xl border border-border bg-popover shadow-2xl",
           className
         )}
       >
-        {children}
+        <Command shouldFilter={shouldFilter}>{children}</Command>
       </div>
     </div>
   )
@@ -82,7 +91,7 @@ function CommandInput({
 }: React.ComponentProps<typeof CommandPrimitive.Input>) {
   return (
     <div data-slot="command-input-wrapper" className="p-1 pb-0">
-      <InputGroup className="h-8! rounded-lg! border-zinc-200 bg-zinc-50 shadow-none! *:data-[slot=input-group-addon]:pl-2!">
+      <InputGroup className="h-8! rounded-lg! border-border bg-muted shadow-none! *:data-[slot=input-group-addon]:pl-2!">
         <CommandPrimitive.Input
           data-slot="command-input"
           className={cn(
@@ -122,7 +131,7 @@ function CommandEmpty({
   return (
     <CommandPrimitive.Empty
       data-slot="command-empty"
-      className={cn("py-6 text-center text-sm text-zinc-500", className)}
+      className={cn("py-6 text-center text-sm text-muted-foreground", className)}
       {...props}
     />
   )
@@ -136,7 +145,7 @@ function CommandGroup({
     <CommandPrimitive.Group
       data-slot="command-group"
       className={cn(
-        "overflow-hidden p-1 text-zinc-900 **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:py-1.5 **:[[cmdk-group-heading]]:text-xs **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group-heading]]:uppercase **:[[cmdk-group-heading]]:tracking-wide **:[[cmdk-group-heading]]:text-zinc-500",
+        "overflow-hidden p-1 text-popover-foreground **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:py-1.5 **:[[cmdk-group-heading]]:text-xs **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group-heading]]:uppercase **:[[cmdk-group-heading]]:tracking-wide **:[[cmdk-group-heading]]:text-muted-foreground",
         className
       )}
       {...props}
@@ -151,7 +160,7 @@ function CommandSeparator({
   return (
     <CommandPrimitive.Separator
       data-slot="command-separator"
-      className={cn("-mx-1 h-px bg-zinc-200", className)}
+      className={cn("-mx-1 h-px bg-border", className)}
       {...props}
     />
   )
@@ -166,7 +175,7 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "group/command-item relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:bg-indigo-50 data-selected:text-indigo-700 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-selected:*:[svg]:text-indigo-700",
+        "group/command-item relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:bg-primary/10 data-selected:text-primary [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-selected:*:[svg]:text-primary",
         className
       )}
       {...props}
@@ -185,7 +194,7 @@ function CommandShortcut({
     <span
       data-slot="command-shortcut"
       className={cn(
-        "ml-auto text-xs tracking-widest text-zinc-400 group-data-selected/command-item:text-indigo-500",
+        "ml-auto text-xs tracking-widest text-muted-foreground group-data-selected/command-item:text-primary",
         className
       )}
       {...props}

@@ -10,6 +10,7 @@
  *  6. POST /api/contracts/[id]/document/image     — upload inline image
  *  7. POST /api/contracts/[id]/document/import    — start DOCX/PDF import job
  *  8. GET  /api/contracts/[id]/document/import/[jobId] — poll import job
+ *  9. POST /api/contracts/[id]/document/from-file — seed the editor from an upload
  */
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { prisma } from "@/lib/db/client"
@@ -1361,6 +1362,107 @@ describe("GET /api/contracts/[id]/document/import/[jobId]", () => {
       new Request("http://localhost/api/contracts/contract-1/document/import/convert-job-1"),
       { params: { id: "contract-1", jobId: "convert-job-1" } },
     )
+    expect(res.status).toBe(404)
+  })
+})
+
+// ─── 9. POST /api/contracts/[id]/document/from-file ───────────────────────────
+
+describe("POST /api/contracts/[id]/document/from-file", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(requireWriteScope).mockReturnValue(null)
+  })
+
+  const pdfFile = {
+    id: "file-1",
+    filename: "telus-agreement.pdf",
+    storageKey: "orgs/org-1/contracts/contract-1/telus-agreement.pdf",
+    mimeType: "application/pdf",
+  }
+
+  it("queues a convert job for the contract's latest file", async () => {
+    const { documentConvertQueue } = await import("@/lib/jobs/queues")
+    vi.mocked(resolveAuth).mockResolvedValue(adminCtx)
+    vi.mocked(prisma.contract.findUnique).mockResolvedValueOnce(draftContract as any)
+    vi.mocked(prisma.contractFile.findFirst).mockResolvedValueOnce(pdfFile as any)
+
+    const { POST } = await import("@/app/api/contracts/[id]/document/from-file/route")
+    const res = await POST(
+      new Request("http://localhost/api/contracts/contract-1/document/from-file", {
+        method: "POST",
+      }),
+      { params: { id: "contract-1" } },
+    )
+
+    expect(res.status).toBe(202)
+    const body = await res.json()
+    expect(body.jobId).toBe("convert-job-1")
+    expect(documentConvertQueue.add).toHaveBeenCalledWith(
+      "convert",
+      expect.objectContaining({
+        contractId: "contract-1",
+        storageKey: pdfFile.storageKey,
+        fileType: "pdf",
+        requestedById: "user-admin",
+      }),
+    )
+  })
+
+  it("returns 404 when the contract has no file", async () => {
+    vi.mocked(resolveAuth).mockResolvedValue(adminCtx)
+    vi.mocked(prisma.contract.findUnique).mockResolvedValueOnce(draftContract as any)
+    vi.mocked(prisma.contractFile.findFirst).mockResolvedValueOnce(null as any)
+
+    const { POST } = await import("@/app/api/contracts/[id]/document/from-file/route")
+    const res = await POST(
+      new Request("http://localhost/api/contracts/contract-1/document/from-file", { method: "POST" }),
+      { params: { id: "contract-1" } },
+    )
+
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toBe("no_file")
+  })
+
+  it("refuses read-only statuses with 422", async () => {
+    vi.mocked(resolveAuth).mockResolvedValue(adminCtx)
+    vi.mocked(prisma.contract.findUnique).mockResolvedValueOnce({
+      ...draftContract,
+      status: "ACTIVE",
+    } as any)
+
+    const { POST } = await import("@/app/api/contracts/[id]/document/from-file/route")
+    const res = await POST(
+      new Request("http://localhost/api/contracts/contract-1/document/from-file", { method: "POST" }),
+      { params: { id: "contract-1" } },
+    )
+
+    expect(res.status).toBe(422)
+    expect((await res.json()).error).toBe("read_only_status")
+  })
+
+  it("refuses the viewer role with 403", async () => {
+    vi.mocked(resolveAuth).mockResolvedValue(viewerCtx)
+
+    const { POST } = await import("@/app/api/contracts/[id]/document/from-file/route")
+    const res = await POST(
+      new Request("http://localhost/api/contracts/contract-1/document/from-file", { method: "POST" }),
+      { params: { id: "contract-1" } },
+    )
+
+    expect(res.status).toBe(403)
+  })
+
+  it("returns 404 for a contract in another org", async () => {
+    vi.mocked(resolveAuth).mockResolvedValue(adminCtx)
+    vi.mocked(prisma.contract.findUnique).mockResolvedValueOnce(otherOrgContract as any)
+
+    const { POST } = await import("@/app/api/contracts/[id]/document/from-file/route")
+    const res = await POST(
+      new Request("http://localhost/api/contracts/contract-1/document/from-file", { method: "POST" }),
+      { params: { id: "contract-1" } },
+    )
+
     expect(res.status).toBe(404)
   })
 })
