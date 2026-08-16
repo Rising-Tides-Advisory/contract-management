@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { Search, FileText, Sparkles } from "lucide-react"
+import { Search, FileText, Sparkles, AlertCircle } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -65,6 +65,9 @@ export default function SearchPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
+  // A failed request used to render as "No results", which reads as "you have
+  // no matching contracts" when the truth is that the search never ran.
+  const [error, setError] = useState<string | null>(null)
 
   const hasFilters = selectedTypes.size > 0 || selectedStatuses.size > 0 || endDateFrom || endDateTo || valueMin || valueMax
 
@@ -88,6 +91,7 @@ export default function SearchPage() {
 
     setLoading(true)
     setSearched(true)
+    setError(null)
     try {
       let allResults: SearchResult[] = []
 
@@ -101,14 +105,33 @@ export default function SearchPage() {
         if (res.ok) {
           const data = await res.json()
           allResults = (data.results ?? []).map((r: SearchResult) => r)
+        } else {
+          setError(
+            res.status === 503
+              ? "Semantic search needs an embedding provider configured in Settings → AI. Switch off the sparkle icon for keyword search."
+              : `Semantic search failed (HTTP ${res.status}).`,
+          )
+          setResults([])
+          setTotal(0)
+          return
         }
       } else if (q.trim()) {
-        // Use the FTS endpoint: searches title, counterparty, notes, and extracted document text
+        // Keyword endpoint: title, counterparty and notes via the FTS index,
+        // widening to the extracted document text when that finds nothing.
         const params = new URLSearchParams({ q: q.trim(), limit: "100" })
         const res = await fetch(`/api/search?${params}`)
         if (res.ok) {
           const data = await res.json()
           allResults = (data.results ?? []).map((r: SearchResult) => r)
+        } else {
+          setError(
+            res.status === 429
+              ? "Too many searches in a short window — wait a moment and try again."
+              : `Search failed (HTTP ${res.status}). This is a server error, not an empty result.`,
+          )
+          setResults([])
+          setTotal(0)
+          return
         }
       } else {
         // Filter-only mode: use the contracts API (no text query)
@@ -159,6 +182,7 @@ export default function SearchPage() {
       setResults(allResults)
       setTotal(allResults.length)
     } catch {
+      setError("Could not reach the search service. Check your connection and try again.")
       setResults([])
       setTotal(0)
     } finally {
@@ -352,6 +376,14 @@ export default function SearchPage() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center pt-20">
+              <div className="flex size-12 items-center justify-center rounded-full bg-destructive/10">
+                <AlertCircle className="size-6 text-destructive" />
+              </div>
+              <p className="mt-3 text-sm font-medium text-foreground">Search didn&apos;t run</p>
+              <p className="mt-1 max-w-sm text-center text-sm text-muted-foreground">{error}</p>
             </div>
           ) : results.length > 0 ? (
             <>
