@@ -9,6 +9,7 @@ import { SECURE_HEADERS } from "@/lib/api-headers"
 import { fireAndLog } from "@/lib/utils/fire-and-log"
 import { requestLogger } from "@/lib/logger"
 import { captureServerEvent } from "@/lib/posthog-server"
+import { contractTextFilter } from "@/lib/search-filter"
 import { Prisma } from "@prisma/client"
 import { z } from "zod"
 import { CurrencyCodeSchema } from "@/lib/currencies"
@@ -67,7 +68,9 @@ export async function GET(req: Request) {
     if (ownerId) where.ownerId = ownerId
     if (folderId) where.folderId = folderId
     if (tagId) where.tags = { some: { id: tagId } }
-    if (search) where.title = { contains: search, mode: "insensitive" }
+    // Matches title, counterparty and notes — a counterparty name is at least
+    // as likely a search term as the title.
+    if (search) Object.assign(where, contractTextFilter(search))
 
     const [contracts, total] = await Promise.all([
       prisma.contract.findMany({

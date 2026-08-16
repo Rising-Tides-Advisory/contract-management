@@ -48,6 +48,7 @@ export function CmdK() {
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
   const router = useRouter()
 
   const debouncedQuery = useDebounce(query, 200)
@@ -59,15 +60,20 @@ export function CmdK() {
       return
     }
     setSearching(true)
+    setSearchError(null)
     try {
       const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=8`)
       if (res.ok) {
         const data = await res.json()
         setResults(data.results ?? [])
       } else {
+        // Distinct from "nothing matched" — otherwise a broken search reads as
+        // an empty contract repository.
+        setSearchError(`Search failed (HTTP ${res.status})`)
         setResults([])
       }
     } catch {
+      setSearchError("Could not reach the search service")
       setResults([])
     } finally {
       setSearching(false)
@@ -83,6 +89,7 @@ export function CmdK() {
     if (!open) {
       setQuery("")
       setResults([])
+      setSearchError(null)
     }
   }, [open])
 
@@ -135,7 +142,9 @@ export function CmdK() {
                 <CommandItem disabled value="contracts-empty">
                   {searching
                     ? "Searching…"
-                    : `No contracts found for "${query}"`}
+                    : searchError
+                      ? `${searchError} — try again`
+                      : `No contracts found for "${query}"`}
                 </CommandItem>
               ) : (
                 results.map((r) => (
