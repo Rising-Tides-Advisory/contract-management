@@ -23,7 +23,8 @@ import {
   selectPagesForExtraction,
   selectTextWindow,
 } from "@/lib/ai/document"
-import { parseExtractionResponse, verifyCitations } from "@/lib/ai/extraction"
+import { parseExtractionResponse, planExtraction, verifyCitations } from "@/lib/ai/extraction"
+import type { ParsedDocument } from "@/lib/ai/document"
 
 /** Build an n-page document; `overrides` injects text on specific 1-indexed pages. */
 function makePages(n: number, overrides: Record<number, string> = {}): string[] {
@@ -276,6 +277,112 @@ describe("verifyCitations", () => {
     expect(stats.unchecked).toBe(1)
     expect(extractions[0].data.sourcePage).toBe(4)
     expect(extractions[0].data.confidence).toBe(0.8)
+  })
+})
+
+describe("planExtraction", () => {
+  const realPage =
+    "This Agreement is entered into between Acme Corporation and Globex Inc, " +
+    "and sets out the terms under which the services described herein are provided."
+
+  const pdfDoc = (pageCount: number, text = realPage): ParsedDocument => ({
+    fileType: "pdf",
+    pages: Array.from({ length: pageCount }, () => text),
+    pageCount,
+    text: Array.from({ length: pageCount }, () => text).join("\n\n"),
+  })
+
+  const scannedPdf = (pageCount: number): ParsedDocument => ({
+    fileType: "pdf",
+    pages: Array.from({ length: pageCount }, () => ""),
+    pageCount,
+    text: "",
+  })
+
+  it("uses page-tagged text when the document has a text layer", () => {
+    const result = planExtraction({
+      doc: pdfDoc(5),
+      buffer: Buffer.alloc(10),
+      provider: "anthropic",
+      model: "claude-haiku-4-5",
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.plan.mode).toBe("text")
+    expect(result.plan.canCitePages).toBe(true)
+    expect(result.plan.assignPages).toBe(true)
+    if (result.plan.content.kind !== "text") throw new Error("expected text content")
+    expect(result.plan.content.text).toContain("[page 1]")
+  })
+
+  it("selects pages for a long document and reports the drop", () => {
+    const result = planExtraction({
+      doc: pdfDoc(150),
+      buffer: Buffer.alloc(10),
+      provider: "anthropic",
+      model: "claude-haiku-4-5",
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.plan.pagesDropped).toBeGreaterThan(0)
+    expect(result.plan.pagesAnalyzed).toBeLessThanOrEqual(30)
+  })
+
+  // The failure that started this: a scanned contract has no text to send, so
+  // it has to be looked at rather than read.
+  it("sends a scanned PDF natively so the model can read the pages", () => {
+    const result = planExtraction({
+      doc: scannedPdf(8),
+      buffer: Buffer.from("%PDF-1.4 fake bytes"),
+      provider: "anthropic",
+      model: "claude-haiku-4-5",
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.plan.mode).toBe("pdf")
+    expect(result.plan.content.kind).toBe("pdf")
+    // Nothing of our own to check the model's quotes against.
+    expect(result.plan.canVerify).toBe(false)
+  })
+
+  it("declines a scan too long to send natively", () => {
+    const result = planExtraction({
+      doc: scannedPdf(400),
+      buffer: Buffer.from("%PDF-1.4"),
+      provider: "anthropic",
+      model: "claude-haiku-4-5",
+    })
+    // The worker falls back to OCR text from the job payload in this case.
+    expect(result.ok).toBe(false)
+  })
+
+  it("declines a scan when the provider has no native PDF path", () => {
+    const result = planExtraction({
+      doc: scannedPdf(4),
+      buffer: Buffer.from("%PDF-1.4"),
+      provider: "openai",
+      model: "gpt-4o-mini",
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it("suppresses page citations for unpaginated formats", () => {
+    const docx: ParsedDocument = {
+      fileType: "docx",
+      pages: [realPage],
+      pageCount: 0,
+      text: realPage,
+    }
+    const result = planExtraction({
+      doc: docx,
+      buffer: Buffer.alloc(0),
+      provider: "anthropic",
+      model: "claude-haiku-4-5",
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.plan.canCitePages).toBe(false)
+    expect(result.plan.assignPages).toBe(false)
   })
 })
 

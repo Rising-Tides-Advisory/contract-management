@@ -71,6 +71,7 @@ import { defaultModelFor } from "@/lib/ai/models"
 import {
   DEFAULT_MAX_PAGES,
   detectFileType,
+  isThinText,
   parseDocument,
   type ParsedDocument,
 } from "@/lib/ai/document"
@@ -559,7 +560,32 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
       model = override
     }
 
-    const planned = planExtraction({ doc, buffer, provider: config.provider, model })
+    let planned = planExtraction({ doc, buffer, provider: config.provider, model })
+
+    // The re-read file can be unusable where the job payload is not: a scanned
+    // contract too large to send natively still has OCR text in `extractedText`,
+    // recovered by the extract worker. Planning only on the re-read document
+    // would silently skip those contracts entirely.
+    let planDoc = doc
+    if (!planned.ok && !isThinText(extractedText)) {
+      planDoc = {
+        fileType: "docx",
+        pages: [extractedText],
+        pageCount: 0,
+        text: extractedText,
+      }
+      logger.info(
+        { contractId, pageCount: doc.pageCount },
+        "[ai_extract] falling back to the extracted text from the job payload",
+      )
+      planned = planExtraction({
+        doc: planDoc,
+        buffer: Buffer.alloc(0),
+        provider: config.provider,
+        model,
+      })
+    }
+
     if (!planned.ok) {
       logger.warn(
         { contractId, pageCount: doc.pageCount },
@@ -619,7 +645,7 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
     // Ground every citation in the source document. A model asked for a page
     // number always returns a plausible one; this replaces that guess with the
     // page the quote is actually on, and discards quotes that appear nowhere.
-    const { extractions: fieldData, stats } = verifyCitations(parsed, doc.pages, {
+    const { extractions: fieldData, stats } = verifyCitations(parsed, planDoc.pages, {
       canVerify: plan.canVerify,
       assignPages: plan.assignPages,
     })
@@ -679,7 +705,7 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
 
     const coverage =
       plan.pagesDropped > 0
-        ? ` (analyzed ${plan.pagesAnalyzed} of ${doc.pageCount} pages)`
+        ? ` (analyzed ${plan.pagesAnalyzed} of ${planDoc.pageCount} pages)`
         : ""
     await db.activity.create({
       data: {
@@ -690,7 +716,7 @@ const aiExtractWorker = new Worker<ContractAiExtractJobData>(
         detail: `AI extracted ${fieldData.length} fields${coverage}`,
         metadata: {
           mode: plan.mode,
-          pageCount: doc.pageCount,
+          pageCount: planDoc.pageCount,
           pagesAnalyzed: plan.pagesAnalyzed,
           pagesDropped: plan.pagesDropped,
           citations: { ...stats },
