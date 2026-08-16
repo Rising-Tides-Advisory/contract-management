@@ -26,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { EmailConfigSection } from "@/components/settings/email-config-section"
 import {
   CRM_PROVIDERS,
   type CrmIntegrationStatus,
@@ -225,9 +226,11 @@ function CloudStorageSection() {
 function CommunicationSection({
   slackCount,
   teamsCount,
+  isAdmin,
 }: {
   slackCount: number
   teamsCount: number
+  isAdmin: boolean
 }) {
   function channelBadge(count: number) {
     if (count > 0) {
@@ -238,47 +241,53 @@ function CommunicationSection({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="rounded-[var(--radius)] border border-border bg-card p-4 flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground text-xs font-bold">
-          SL
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <h3 className="text-sm font-semibold">Slack</h3>
-            {channelBadge(slackCount)}
+    <div className="space-y-5">
+      {/* Email delivery is configured here and nowhere else — Notifications
+          links across to it rather than duplicating the form. */}
+      <EmailConfigSection isAdmin={isAdmin} />
+
+      <div className="space-y-3">
+        <div className="rounded-[var(--radius)] border border-border bg-card p-4 flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground text-xs font-bold">
+            SL
           </div>
-          <p className="text-xs text-muted-foreground mb-2">
-            Receive contract event notifications in your Slack channels.
-          </p>
-          <Link
-            href="/settings/notifications"
-            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:opacity-80 transition-opacity"
-          >
-            Configure in Notifications
-            <ExternalLink className="h-3 w-3" />
-          </Link>
-        </div>
-      </div>
-      <div className="rounded-[var(--radius)] border border-border bg-card p-4 flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground text-xs font-bold">
-          MT
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <h3 className="text-sm font-semibold">Microsoft Teams</h3>
-            {channelBadge(teamsCount)}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <h3 className="text-sm font-semibold">Slack</h3>
+              {channelBadge(slackCount)}
+            </div>
+            <p className="text-xs text-muted-foreground mb-2">
+              Receive contract event notifications in your Slack channels.
+            </p>
+            <Link
+              href="/settings/notifications"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:opacity-80 transition-opacity"
+            >
+              Configure in Notifications
+              <ExternalLink className="h-3 w-3" />
+            </Link>
           </div>
-          <p className="text-xs text-muted-foreground mb-2">
-            Receive contract event notifications in Microsoft Teams channels.
-          </p>
-          <Link
-            href="/settings/notifications"
-            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:opacity-80 transition-opacity"
-          >
-            Configure in Notifications
-            <ExternalLink className="h-3 w-3" />
-          </Link>
+        </div>
+        <div className="rounded-[var(--radius)] border border-border bg-card p-4 flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground text-xs font-bold">
+            MT
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <h3 className="text-sm font-semibold">Microsoft Teams</h3>
+              {channelBadge(teamsCount)}
+            </div>
+            <p className="text-xs text-muted-foreground mb-2">
+              Receive contract event notifications in Microsoft Teams channels.
+            </p>
+            <Link
+              href="/settings/notifications"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:opacity-80 transition-opacity"
+            >
+              Configure in Notifications
+              <ExternalLink className="h-3 w-3" />
+            </Link>
+          </div>
         </div>
       </div>
     </div>
@@ -695,7 +704,19 @@ export default function IntegrationsPage() {
     if (error) toast.error(`Failed to connect: ${error}`)
   }, [searchParams])
 
+  // Deep link (?category=Communication) so other pages can point at the exact
+  // tab holding a setting instead of dropping the user on CRM.
+  useEffect(() => {
+    const requested = searchParams.get("category")
+    if (requested && (CATEGORIES as string[]).includes(requested)) {
+      setActiveCategory(requested as Category)
+    }
+  }, [searchParams])
+
   const canManage = roleLoaded && (role === "admin" || role === "legal")
+  // Email delivery writes require admin specifically — `legal` passes canManage
+  // but would get a 403 from /api/org/email-config.
+  const isAdmin = roleLoaded && (role === "admin" || role === "owner")
 
   function startConnect(provider: CrmProvider) {
     window.location.href = `/api/crm/${provider.toLowerCase()}/connect`
@@ -789,7 +810,11 @@ export default function IntegrationsPage() {
         {activeCategory === "E-Signature" && <ESignatureSection />}
         {activeCategory === "Cloud Storage" && <CloudStorageSection />}
         {activeCategory === "Communication" && (
-          <CommunicationSection slackCount={slackCount} teamsCount={teamsCount} />
+          <CommunicationSection
+            slackCount={slackCount}
+            teamsCount={teamsCount}
+            isAdmin={isAdmin}
+          />
         )}
         {activeCategory === "Accounting" && <AccountingSection />}
         {activeCategory === "Identity" && <IdentitySection connected={entraConnected} />}
