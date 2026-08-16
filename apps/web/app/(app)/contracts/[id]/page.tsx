@@ -95,6 +95,19 @@ interface AIExtraction {
   sourceText: string
   sourcePage: number | null
   status: "pending" | "accepted" | "rejected"
+  updatedAt?: string
+}
+
+/**
+ * Identity of the current result set. A re-run rewrites rows in place rather
+ * than adding new ones, so "did the worker finish?" can only be answered by
+ * comparing contents — row count stays the same.
+ */
+function extractionSignature(list: AIExtraction[]): string {
+  return list
+    .map((e) => `${e.id}:${e.status}:${e.rawValue ?? ""}:${e.updatedAt ?? ""}`)
+    .sort()
+    .join("|")
 }
 
 const ALL_STATUSES: ContractStatus[] = [
@@ -296,6 +309,9 @@ export default function ContractDetailPage() {
   const [extractions, setExtractions] = useState<AIExtraction[]>([])
   const [extractionPolling, setExtractionPolling] = useState(false)
   const extractionPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Signature of the rows as they were when a manual re-run was queued; non-null
+  // while we wait for the worker to rewrite them.
+  const [rerunSignature, setRerunSignature] = useState<string | null>(null)
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [obligations, setObligations] = useState<Obligation[]>([])
   const [riskData, setRiskData] = useState<{
@@ -437,6 +453,36 @@ export default function ContractDetailPage() {
       }
     }
   }, [loading, extractions.length, files.length, id])
+
+  // ── Manual re-run polling ─────────────────────────────────────────────────
+  // The poll above only fires while the tab is empty, so it never covers a
+  // re-run on a contract that already has rows. Watch the row contents instead
+  // and stop as soon as the worker's rewrite lands (or after ~90 s).
+  useEffect(() => {
+    if (rerunSignature === null) return
+    let attempts = 0
+    const MAX = 22 // 22 × 4 s ≈ 88 s ceiling
+
+    const interval = setInterval(async () => {
+      attempts++
+      try {
+        const res = await fetch(`/api/contracts/${id}/extractions`)
+        if (res.ok) {
+          const data = await res.json()
+          const next: AIExtraction[] = data.extractions ?? []
+          if (next.length > 0 && extractionSignature(next) !== rerunSignature) {
+            setExtractions(next)
+            setRerunSignature(null)
+            return
+          }
+        }
+      } catch { /* network hiccup — keep polling */ }
+
+      if (attempts >= MAX) setRerunSignature(null)
+    }, 4000)
+
+    return () => clearInterval(interval)
+  }, [rerunSignature, id])
 
   // Only the moves with consequences stop for confirmation — stepping forward
   // through the workflow stays a single click.
@@ -587,6 +633,7 @@ export default function ContractDetailPage() {
   }
 
   async function handleRerunExtraction() {
+    const before = extractionSignature(extractions)
     try {
       const res = await fetch(`/api/contracts/${id}/extractions/rerun`, { method: "POST" })
       if (!res.ok) {
@@ -594,9 +641,15 @@ export default function ContractDetailPage() {
         toast.error(body?.message ?? "Failed to re-run extraction")
         return
       }
-      toast.success("AI extraction queued — results will appear in ~30s")
-      // Reset polling so the tab auto-refreshes when new results land
-      setExtractions([])
+      const body = await res.json().catch(() => ({}))
+      toast.success(
+        body?.source === "file"
+          ? "Re-reading the document — results will appear in under a minute"
+          : "AI extraction queued — results will appear in ~30s",
+      )
+      // Keep the existing rows on screen; the worker rewrites them in place, so
+      // wait for the contents to change rather than blanking the tab.
+      setRerunSignature(before)
     } catch {
       toast.error("Failed to re-run extraction")
     }
@@ -1375,9 +1428,16 @@ export default function ContractDetailPage() {
                         Accept All
                       </Button>
                     )}
-                    <Button size="sm" variant="outline" onClick={handleRerunExtraction}>
-                      <RefreshCw className="size-3.5" />
-                      Re-run Extraction
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleRerunExtraction}
+                      disabled={rerunSignature !== null}
+                    >
+                      <RefreshCw
+                        className={cn("size-3.5", rerunSignature !== null && "animate-spin")}
+                      />
+                      {rerunSignature !== null ? "Re-running…" : "Re-run Extraction"}
                     </Button>
                   </div>
                 </div>
