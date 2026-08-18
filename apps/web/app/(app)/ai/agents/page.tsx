@@ -1,5 +1,6 @@
 import { Eye, Zap, Calendar, CheckCircle, Bot } from "lucide-react"
 import Link from "next/link"
+import { APP_NAME } from "@/lib/brand"
 
 // ─── Agent Card ────────────────────────────────────────────────────────────
 
@@ -155,7 +156,7 @@ export default function AIAgentsPage() {
               AI Agents — Cloud Feature
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              AI Agents will be available in the Aakd Cloud plan. Self-hosted users
+              AI Agents will be available in the {APP_NAME} Cloud plan. Self-hosted users
               can configure their own AI providers via the API.
             </p>
           </div>

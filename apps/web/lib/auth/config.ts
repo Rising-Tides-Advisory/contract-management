@@ -7,6 +7,7 @@ import { resolveDefaultOrganizationId } from "@/lib/auth/active-org"
 import { sendInvitationEmail } from "@/lib/email/invitation"
 import { isEmailConfigured, sendEmail } from "@/lib/email/transport"
 import { logger } from "@/lib/logger"
+import { APP_NAME } from "@/lib/brand"
 
 const authOrigin = process.env.BETTER_AUTH_URL ?? "http://localhost:3000"
 const publicAppOrigin = process.env.NEXT_PUBLIC_APP_URL ?? authOrigin
@@ -26,7 +27,7 @@ export const auth = betterAuth({
       if (!isEmailConfigured()) return
       await sendEmail({
         to: user.email,
-        subject: "[Aakd] Reset your password",
+        subject: `[${APP_NAME}] Reset your password`,
         html: `
 <!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="font-family:system-ui,sans-serif;color:#1f2937;background:#f9fafb;padding:24px;margin:0">

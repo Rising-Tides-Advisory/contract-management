@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { GlobalProviders } from "@/components/global-providers"
 import { AakdLogoMark } from "@/components/aakd-logo"
+import { APP_NAME } from "@/lib/brand"
 import { useTranslations } from "next-intl"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -155,7 +156,7 @@ function Sidebar({
           style={{ fontFamily: "var(--font-sora), 'Sora', sans-serif", letterSpacing: "-0.02em" }}
           title={orgName || undefined}
         >
-          {orgName || "Aaked"}
+          {orgName || APP_NAME}
         </span>
         <NotificationBell />
         <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />

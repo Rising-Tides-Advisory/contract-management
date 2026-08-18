@@ -223,7 +223,7 @@
   },
   "import": {
     "title": "Importer des contrats",
-    "subtitle": "Migrez vos contrats existants dans Aakd depuis des tableurs, PandaDoc, ContractBook, DocuSign CLM ou tout outil exportant des fichiers.",
+    "subtitle": "Migrez vos contrats existants dans {appName} depuis des tableurs, PandaDoc, ContractBook, DocuSign CLM ou tout outil exportant des fichiers.",
     "tabs": {
       "csv": "Tableur",
       "batch": "Fichiers en lot",
@@ -531,9 +531,9 @@
     "os": {
       "eyebrow": "Open Source",
       "heading": "Vos contrats. Votre infrastructure.",
-      "subtitle": "Aaked est entièrement open source sous licence AGPL. Déployez sur vos propres serveurs pour une souveraineté totale des données — sans dépendance fournisseur, sans tarification par siège.",
+      "subtitle": "{appName} est entièrement open source sous licence AGPL. Déployez sur vos propres serveurs pour une souveraineté totale des données — sans dépendance fournisseur, sans tarification par siège.",
       "0title": "Auto-hébergement partout",
-      "0desc": "Docker, Kubernetes ou bare metal. Exécutez Aaked où votre équipe de conformité en a besoin. Un seul commande pour déployer.",
+      "0desc": "Docker, Kubernetes ou bare metal. Exécutez {appName} où votre équipe de conformité en a besoin. Un seul commande pour déployer.",
       "1title": "Apportez votre propre IA",
       "1desc": "Connectez des LLM locaux, utilisez OpenAI, Anthropic ou n'importe quel fournisseur. Vos clés API, vos modèles — aucune donnée ne quitte votre réseau.",
       "2title": "Piloté par la communauté",
@@ -553,17 +553,17 @@
     },
     "faq": {
       "heading": "Questions fréquemment posées",
-      "q0": "Aaked est-il vraiment gratuit ?",
-      "a0": "Oui. Aaked est open source sous licence AGPL. Vous pouvez l'auto-héberger gratuitement avec des utilisateurs, contrats et fonctionnalités illimités. Nous proposons également une version hébergée gratuite.",
+      "q0": "{appName} est-il vraiment gratuit ?",
+      "a0": "Oui. {appName} est open source sous licence AGPL. Vous pouvez l'auto-héberger gratuitement avec des utilisateurs, contrats et fonctionnalités illimités. Nous proposons également une version hébergée gratuite.",
       "q1": "Comment fonctionne l'auto-hébergement ?",
       "a1": "Déployez avec une seule commande Docker ou utilisez notre Helm chart Kubernetes. Nous fournissons une documentation détaillée, des scripts de migration et un support communautaire.",
       "q2": "Puis-je utiliser mes propres modèles IA ?",
-      "a2": "Absolument. Aaked supporte les LLM locaux (via Ollama, vLLM, etc.), OpenAI, Anthropic, Azure et toute API compatible OpenAI. Utilisez vos propres clés API.",
-      "q3": "Aaked convient-il aux entreprises ?",
-      "a3": "Oui. Aaked inclut SSO/SAML, contrôle d'accès basé sur les rôles, journal d'audit, conformité SOC 2 et outils RGPD. De nombreuses équipes dans des secteurs réglementés utilisent Aaked en production.",
+      "a2": "Absolument. {appName} supporte les LLM locaux (via Ollama, vLLM, etc.), OpenAI, Anthropic, Azure et toute API compatible OpenAI. Utilisez vos propres clés API.",
+      "q3": "{appName} convient-il aux entreprises ?",
+      "a3": "Oui. {appName} inclut SSO/SAML, contrôle d'accès basé sur les rôles, journal d'audit, conformité SOC 2 et outils RGPD. De nombreuses équipes dans des secteurs réglementés utilisent {appName} en production.",
       "q4": "Comment migrer depuis DocuSign ou d'autres outils ?",
       "a4": "Nous fournissons des outils d'import pour DocuSign, PandaDoc et les migrations CSV. Notre équipe peut aider lors de la période d'accès anticipé.",
-      "q5": "Quelles langues Aaked supporte-t-il ?",
+      "q5": "Quelles langues {appName} supporte-t-il ?",
       "a5": "L'interface supporte l'anglais, l'arabe (avec RTL complet), le français, l'allemand et l'espagnol. Vous pouvez rédiger des contrats dans n'importe quelle langue."
     },
     "contact": {
@@ -577,7 +577,7 @@
     },
     "footer": {
       "tagline": "La plateforme de contrats. Open source, propulsée par l'IA, conçue pour les équipes soucieuses de la souveraineté des données.",
-      "copyright": "© 2026 Aaked. Open source sous licence AGPL-3.0.",
+      "copyright": "© 2026 {appName}. Open source sous licence AGPL-3.0.",
       "product": "Produit",
       "resources": "Ressources",
       "company": "Entreprise",

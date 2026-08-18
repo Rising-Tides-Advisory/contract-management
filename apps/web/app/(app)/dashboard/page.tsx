@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import type { Contract } from "@/lib/types"
 import type { AnalyticsSummary } from "@/app/api/analytics/summary/route"
 import { useTranslations } from "next-intl"
+import { APP_NAME } from "@/lib/brand"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -170,7 +171,7 @@ export default function DashboardPage() {
             <div>
               <h2 className="text-lg font-semibold text-foreground">Upload your first contract</h2>
               <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
-                Get started by uploading a PDF or DOCX contract. Aakd will extract key dates, parties, and risk signals automatically.
+                Get started by uploading a PDF or DOCX contract. {APP_NAME} will extract key dates, parties, and risk signals automatically.
               </p>
             </div>
             <Link

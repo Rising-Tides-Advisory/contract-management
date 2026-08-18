@@ -1,4 +1,5 @@
 import { sendEmail } from "@/lib/email/transport"
+import { APP_NAME } from "@/lib/brand"
 import {
   HUMAN_EVENT_LABELS,
   type NotificationEventName,
@@ -134,7 +135,7 @@ export async function sendEventNotificationEmail(
     "http://localhost:3000"
 
   const label = eventLabel(params.eventName)
-  const subject = `[Aakd] ${label} — ${params.contractTitle}`
+  const subject = `[${APP_NAME}] ${label} — ${params.contractTitle}`
 
   await sendEmail({
     organizationId: params.organizationId,

@@ -223,7 +223,7 @@
   },
   "import": {
     "title": "Verträge importieren",
-    "subtitle": "Migrieren Sie Ihre bestehenden Verträge in Aakd aus Tabellen, PandaDoc, ContractBook, DocuSign CLM oder jedem Tool, das Dateien exportieren kann.",
+    "subtitle": "Migrieren Sie Ihre bestehenden Verträge in {appName} aus Tabellen, PandaDoc, ContractBook, DocuSign CLM oder jedem Tool, das Dateien exportieren kann.",
     "tabs": {
       "csv": "Tabelle",
       "batch": "Stapeldateien",
@@ -531,9 +531,9 @@
     "os": {
       "eyebrow": "Open Source",
       "heading": "Ihre Verträge. Ihre Infrastruktur.",
-      "subtitle": "Aaked ist vollständig Open Source unter der AGPL-Lizenz. Auf eigenen Servern bereitstellen für vollständige Datensouveränität — keine Anbieterbindung, keine Preise pro Nutzer.",
+      "subtitle": "{appName} ist vollständig Open Source unter der AGPL-Lizenz. Auf eigenen Servern bereitstellen für vollständige Datensouveränität — keine Anbieterbindung, keine Preise pro Nutzer.",
       "0title": "Überall selbst hosten",
-      "0desc": "Docker, Kubernetes oder Bare-Metal. Betreiben Sie Aaked, wo Ihr Compliance-Team es braucht. Ein Befehl zum Bereitstellen.",
+      "0desc": "Docker, Kubernetes oder Bare-Metal. Betreiben Sie {appName}, wo Ihr Compliance-Team es braucht. Ein Befehl zum Bereitstellen.",
       "1title": "Eigene KI mitbringen",
       "1desc": "Verbinden Sie lokale LLMs, nutzen Sie OpenAI, Anthropic oder beliebige Anbieter. Ihre API-Schlüssel, Ihre Modelle — keine Daten verlassen Ihr Netzwerk.",
       "2title": "Community-getrieben",
@@ -553,17 +553,17 @@
     },
     "faq": {
       "heading": "Häufig gestellte Fragen",
-      "q0": "Ist Aaked wirklich kostenlos?",
-      "a0": "Ja. Aaked ist Open Source unter der AGPL-Lizenz. Sie können es kostenlos selbst hosten mit unbegrenzten Nutzern, Verträgen und Funktionen. Wir bieten auch eine kostenlose gehostete Version an.",
+      "q0": "Ist {appName} wirklich kostenlos?",
+      "a0": "Ja. {appName} ist Open Source unter der AGPL-Lizenz. Sie können es kostenlos selbst hosten mit unbegrenzten Nutzern, Verträgen und Funktionen. Wir bieten auch eine kostenlose gehostete Version an.",
       "q1": "Wie funktioniert das Selbst-Hosten?",
       "a1": "Bereitstellen mit einem einzigen Docker-Befehl oder unserem Kubernetes Helm-Chart. Wir bieten ausführliche Dokumentation, Migrationsskripte und Community-Support.",
       "q2": "Kann ich eigene KI-Modelle verwenden?",
-      "a2": "Absolut. Aaked unterstützt lokale LLMs (über Ollama, vLLM usw.), OpenAI, Anthropic, Azure und jede OpenAI-kompatible API. Eigene API-Schlüssel mitbringen.",
-      "q3": "Ist Aaked für den Unternehmenseinsatz geeignet?",
-      "a3": "Ja. Aaked enthält SSO/SAML, rollenbasierte Zugriffskontrolle, Audit-Protokollierung, SOC 2-Bereitschaft und DSGVO-Compliance-Tools.",
+      "a2": "Absolut. {appName} unterstützt lokale LLMs (über Ollama, vLLM usw.), OpenAI, Anthropic, Azure und jede OpenAI-kompatible API. Eigene API-Schlüssel mitbringen.",
+      "q3": "Ist {appName} für den Unternehmenseinsatz geeignet?",
+      "a3": "Ja. {appName} enthält SSO/SAML, rollenbasierte Zugriffskontrolle, Audit-Protokollierung, SOC 2-Bereitschaft und DSGVO-Compliance-Tools.",
       "q4": "Wie migriere ich von DocuSign oder anderen Tools?",
       "a4": "Wir bieten Import-Tools für DocuSign, PandaDoc und CSV-basierte Migration. Unser Team kann bei komplexen Migrationen im Rahmen des Early-Access-Zeitraums helfen.",
-      "q5": "Welche Sprachen unterstützt Aaked?",
+      "q5": "Welche Sprachen unterstützt {appName}?",
       "a5": "Die Oberfläche unterstützt Englisch, Arabisch (mit vollem RTL), Französisch, Deutsch und Spanisch. Sie können Verträge in jeder Sprache verfassen."
     },
     "contact": {
@@ -577,7 +577,7 @@
     },
     "footer": {
       "tagline": "Die Vertragsplattform. Open Source, KI-betrieben und für Teams entwickelt, denen Datensouveränität wichtig ist.",
-      "copyright": "© 2026 Aaked. Open Source unter AGPL-3.0-Lizenz.",
+      "copyright": "© 2026 {appName}. Open Source unter AGPL-3.0-Lizenz.",
       "product": "Produkt",
       "resources": "Ressourcen",
       "company": "Unternehmen",

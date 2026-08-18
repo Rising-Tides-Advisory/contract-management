@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import posthog from "posthog-js"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { APP_NAME } from "@/lib/brand"
 
 export function CookieConsent() {
   const [visible, setVisible] = useState(false)
@@ -36,7 +37,7 @@ export function CookieConsent() {
       )}
     >
       <p className="text-sm text-muted-foreground flex-1">
-        We use cookies to understand how you use Aakd and improve your experience.{" "}
+        We use cookies to understand how you use {APP_NAME} and improve your experience.{" "}
         <a
           href="/privacy"
           className="underline underline-offset-2 hover:text-foreground transition-colors"

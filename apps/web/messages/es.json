@@ -223,7 +223,7 @@
   },
   "import": {
     "title": "Importar contratos",
-    "subtitle": "Migre sus contratos existentes a Aakd desde hojas de cálculo, PandaDoc, ContractBook, DocuSign CLM o cualquier herramienta que pueda exportar archivos.",
+    "subtitle": "Migre sus contratos existentes a {appName} desde hojas de cálculo, PandaDoc, ContractBook, DocuSign CLM o cualquier herramienta que pueda exportar archivos.",
     "tabs": {
       "csv": "Hoja de cálculo",
       "batch": "Archivos por lotes",
@@ -531,9 +531,9 @@
     "os": {
       "eyebrow": "Código abierto",
       "heading": "Sus contratos. Su infraestructura.",
-      "subtitle": "Aaked es completamente de código abierto bajo la Licencia AGPL. Despliegue en sus propios servidores para soberanía total de datos — sin dependencia de proveedor, sin precios por usuario.",
+      "subtitle": "{appName} es completamente de código abierto bajo la Licencia AGPL. Despliegue en sus propios servidores para soberanía total de datos — sin dependencia de proveedor, sin precios por usuario.",
       "0title": "Auto-aloje en cualquier lugar",
-      "0desc": "Docker, Kubernetes o bare metal. Ejecute Aaked donde su equipo de cumplimiento lo necesite. Un solo comando para desplegar.",
+      "0desc": "Docker, Kubernetes o bare metal. Ejecute {appName} donde su equipo de cumplimiento lo necesite. Un solo comando para desplegar.",
       "1title": "Use su propia IA",
       "1desc": "Conecte LLMs locales, use OpenAI, Anthropic o cualquier proveedor. Sus claves API, sus modelos — ningún dato sale de su red.",
       "2title": "Impulsado por la comunidad",
@@ -553,17 +553,17 @@
     },
     "faq": {
       "heading": "Preguntas frecuentes",
-      "q0": "¿Aaked es realmente gratuito?",
-      "a0": "Sí. Aaked es de código abierto bajo la Licencia AGPL. Puede auto-alojarlo sin coste con usuarios, contratos y funciones ilimitadas. También ofrecemos una versión alojada gratuita.",
+      "q0": "¿{appName} es realmente gratuito?",
+      "a0": "Sí. {appName} es de código abierto bajo la Licencia AGPL. Puede auto-alojarlo sin coste con usuarios, contratos y funciones ilimitadas. También ofrecemos una versión alojada gratuita.",
       "q1": "¿Cómo funciona el auto-alojamiento?",
       "a1": "Despliegue con un solo comando Docker o use nuestro Helm chart de Kubernetes. Proporcionamos documentación detallada, scripts de migración y soporte comunitario.",
       "q2": "¿Puedo usar mis propios modelos de IA?",
-      "a2": "Absolutamente. Aaked soporta LLMs locales (vía Ollama, vLLM, etc.), OpenAI, Anthropic, Azure y cualquier API compatible con OpenAI. Use sus propias claves API.",
-      "q3": "¿Aaked es adecuado para uso empresarial?",
-      "a3": "Sí. Aaked incluye SSO/SAML, control de acceso basado en roles, registro de auditoría, preparación SOC 2 y herramientas de cumplimiento RGPD.",
+      "a2": "Absolutamente. {appName} soporta LLMs locales (vía Ollama, vLLM, etc.), OpenAI, Anthropic, Azure y cualquier API compatible con OpenAI. Use sus propias claves API.",
+      "q3": "¿{appName} es adecuado para uso empresarial?",
+      "a3": "Sí. {appName} incluye SSO/SAML, control de acceso basado en roles, registro de auditoría, preparación SOC 2 y herramientas de cumplimiento RGPD.",
       "q4": "¿Cómo migro desde DocuSign u otras herramientas?",
       "a4": "Proporcionamos herramientas de importación para DocuSign, PandaDoc y migración basada en CSV. Nuestro equipo puede ayudar con migraciones complejas durante el período de acceso anticipado.",
-      "q5": "¿Qué idiomas admite Aaked?",
+      "q5": "¿Qué idiomas admite {appName}?",
       "a5": "La interfaz admite inglés, árabe (con RTL completo), francés, alemán y español. Puede redactar contratos en cualquier idioma."
     },
     "contact": {
@@ -577,7 +577,7 @@
     },
     "footer": {
       "tagline": "La plataforma de contratos. Código abierto, impulsada por IA, y creada para equipos que se preocupan por la soberanía de datos.",
-      "copyright": "© 2026 Aaked. Código abierto bajo Licencia AGPL-3.0.",
+      "copyright": "© 2026 {appName}. Código abierto bajo Licencia AGPL-3.0.",
       "product": "Producto",
       "resources": "Recursos",
       "company": "Empresa",

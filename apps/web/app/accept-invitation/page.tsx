@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Shield, CheckCircle, XCircle, Loader2 } from "lucide-react"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { APP_NAME } from "@/lib/brand"
 import { organization, useSession } from "@/lib/auth/client"
 
 type State = "loading" | "accepting" | "success" | "no_id" | "error"
@@ -85,7 +86,7 @@ function AcceptInvitationContent() {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600">
             <Shield className="h-5 w-5 text-white" />
           </div>
-          <span className="text-xl font-semibold tracking-tight text-zinc-900">Aaked</span>
+          <span className="text-xl font-semibold tracking-tight text-zinc-900">{APP_NAME}</span>
         </div>
 
         <div className="rounded-lg border border-zinc-200 bg-white p-8 shadow-sm text-center">

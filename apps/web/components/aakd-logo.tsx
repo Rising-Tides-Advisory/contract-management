@@ -1,3 +1,5 @@
+import { APP_NAME } from "@/lib/brand"
+
 /**
  * AakdLogo — shared brand mark.
  * Use <AakdLogoMark> for the square icon only (sidebar, favicon context).
@@ -59,7 +61,7 @@ export function AakdLogo({ size = 26, className, wordmarkClassName }: LogoProps)
           fontSize: Math.round(size * 0.54),
         }}
       >
-        Aaked
+        {APP_NAME}
       </span>
     </div>
   )

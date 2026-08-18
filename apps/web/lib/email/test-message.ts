@@ -8,6 +8,7 @@
  * approvals will use.
  */
 import { sendEmail, type SendResult } from "@/lib/email/transport"
+import { APP_NAME } from "@/lib/brand"
 
 interface TestEmailParams {
   /** Sends through this org's Postmark config when it has one. */
@@ -42,7 +43,7 @@ function buildTestHtml(params: TestEmailParams): string {
 <body style="font-family:system-ui,sans-serif;color:#1f2937;background:#f9fafb;padding:24px;margin:0">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:8px;border:1px solid #e5e7eb;padding:32px">
     <h2 style="margin:0 0 8px;font-size:18px;font-weight:600;color:#111827">Email delivery is working</h2>
-    <p style="margin:0 0 24px;color:#6b7280;font-size:14px">This is a test notification from Aakd. If it reached your inbox, ${escapeHtml(organizationName)} is set up to receive contract lifecycle email.</p>
+    <p style="margin:0 0 24px;color:#6b7280;font-size:14px">This is a test notification from ${APP_NAME}. If it reached your inbox, ${escapeHtml(organizationName)} is set up to receive contract lifecycle email.</p>
 
     <table style="width:100%;border-collapse:collapse;font-size:14px">
       <tr style="border-bottom:1px solid #f3f4f6">
@@ -69,7 +70,7 @@ export async function sendTestEmail(params: TestEmailParams): Promise<SendResult
   return sendEmail({
     organizationId: params.organizationId,
     to: params.to,
-    subject: `[Aakd] Test email — ${params.organizationName}`,
+    subject: `[${APP_NAME}] Test email — ${params.organizationName}`,
     html: buildTestHtml(params),
   })
 }

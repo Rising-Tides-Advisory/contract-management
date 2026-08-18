@@ -1,6 +1,7 @@
 import { ContractAlert, Contract, Organization } from "@prisma/client"
 import { prisma } from "@/lib/db/client"
 import { sendEmail } from "@/lib/email/transport"
+import { APP_NAME } from "@/lib/brand"
 
 export type ContractAlertWithContract = ContractAlert & {
   contract: Contract & { organization: Organization }
@@ -55,7 +56,7 @@ function buildAlertHtml(alert: ContractAlertWithContract): string {
     </table>
 
     ${contract.counterpartyName ? `<p style="margin:24px 0 0;font-size:13px;color:#6b7280">Counterparty: <strong>${escapeHtml(contract.counterpartyName)}</strong></p>` : ""}
-    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af">This is an automated alert from Aakd. Please log in to review the contract.</p>
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af">This is an automated alert from ${APP_NAME}. Please log in to review the contract.</p>
   </div>
 </body>
 </html>`.trim()
@@ -104,7 +105,7 @@ export async function sendAlertEmail(alert: ContractAlertWithContract): Promise<
   if (to.length === 0) return
 
   const label = ALERT_LABELS[alert.alertType] ?? alert.alertType
-  const subject = `[Aakd] ${label} — ${alert.contract.title}`
+  const subject = `[${APP_NAME}] ${label} — ${alert.contract.title}`
 
   await sendEmail({
     organizationId: alert.contract.organizationId,

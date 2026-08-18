@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Sparkles, FileText, Plug, Users } from "lucide-react"
+import { APP_NAME } from "@/lib/brand"
 
 interface Step {
   icon: React.ComponentType<{ className?: string }>
@@ -12,7 +13,7 @@ interface Step {
 const STEPS: Step[] = [
   {
     icon: Sparkles,
-    title: "Welcome to Aakd",
+    title: `Welcome to ${APP_NAME}`,
     description:
       "Let's set up your workspace. This only takes a minute.",
   },
