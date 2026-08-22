@@ -35,6 +35,7 @@ import {
 } from "@/lib/types/crm"
 import { useSession } from "@/lib/auth/client"
 import { cn } from "@/lib/utils"
+import { APP_NAME } from "@/lib/brand"
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -394,7 +395,7 @@ function DeveloperSection() {
             <StatusBadge label="Active" variant="success" />
           </div>
           <p className="text-xs text-muted-foreground mb-2">
-            Access Aakd programmatically using Bearer API keys.
+            Access {APP_NAME} programmatically using Bearer API keys.
           </p>
           <Link
             href="/settings/api-keys"
@@ -408,12 +409,12 @@ function DeveloperSection() {
       <SoonCard
         logo="ZP"
         name="Zapier"
-        description="Connect Aakd to 5,000+ apps via Zapier automation."
+        description={`Connect ${APP_NAME} to 5,000+ apps via Zapier automation.`}
       />
       <SoonCard
         logo="MK"
         name="Make (Integromat)"
-        description="Build powerful workflows with Aakd and Make."
+        description={`Build powerful workflows with ${APP_NAME} and Make.`}
       />
     </div>
   )
@@ -780,7 +781,7 @@ export default function IntegrationsPage() {
         <div>
           <h1 className="text-xl font-semibold">Integrations</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Connect Aakd to the tools your team already uses.
+            Connect {APP_NAME} to the tools your team already uses.
           </p>
         </div>
       </div>

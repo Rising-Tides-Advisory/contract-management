@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils"
 import { MODEL_OPTIONS, DEFAULT_MODEL } from "@/lib/ai/models"
 import Link from "next/link"
+import { APP_NAME } from "@/lib/brand"
 
 // ─── Logos ────────────────────────────────────────────────────────────────────
 
@@ -213,7 +214,7 @@ export default function OnboardingPage() {
         {/* Header */}
         <div className="space-y-1">
           <h1 className="text-2xl font-bold text-foreground tracking-tight">
-            Welcome to Aakd
+            Welcome to {APP_NAME}
           </h1>
           <p className="text-sm text-muted-foreground">
             Your organisation is ready. Connect an AI provider to unlock powerful contract features.

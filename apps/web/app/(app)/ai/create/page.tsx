@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { Bot, Check } from "lucide-react"
+import { APP_NAME } from "@/lib/brand"
 
 // ─── Preview Pane ─────────────────────────────────────────────────────────
 
@@ -146,7 +147,7 @@ export default function AICreatePage() {
               Create with AI
             </h2>
             <p className="text-sm text-muted-foreground text-center max-w-xs mb-5">
-              Guided AI contracting is available in the Aakd Cloud plan.
+              Guided AI contracting is available in the {APP_NAME} Cloud plan.
             </p>
             <Link
               href="mailto:hello@aakd.io"

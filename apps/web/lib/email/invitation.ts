@@ -1,4 +1,5 @@
 import { sendEmail } from "@/lib/email/transport"
+import { APP_NAME } from "@/lib/brand"
 
 interface InvitationEmailParams {
   /** Sends through this org's Postmark config when it has one. */
@@ -26,7 +27,7 @@ function buildInvitationHtml(params: InvitationEmailParams): string {
 <body style="font-family:system-ui,sans-serif;color:#1f2937;background:#f9fafb;padding:24px;margin:0">
   <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:8px;border:1px solid #e5e7eb;padding:32px">
     <h2 style="margin:0 0 8px;font-size:18px;font-weight:600;color:#111827">You're invited to ${escapeHtml(organizationName)}</h2>
-    <p style="margin:0 0 24px;color:#6b7280;font-size:14px">${escapeHtml(inviterName)} has invited you to join their workspace on Aakd.</p>
+    <p style="margin:0 0 24px;color:#6b7280;font-size:14px">${escapeHtml(inviterName)} has invited you to join their workspace on ${APP_NAME}.</p>
 
     <p style="margin:24px 0">
       <a href="${escapeHtml(acceptUrl)}" style="display:inline-block;background:#111827;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:500">Accept invitation</a>
@@ -42,7 +43,7 @@ export async function sendInvitationEmail(params: InvitationEmailParams): Promis
   await sendEmail({
     organizationId: params.organizationId,
     to: params.to,
-    subject: `You've been invited to ${params.organizationName} on Aakd`,
+    subject: `You've been invited to ${params.organizationName} on ${APP_NAME}`,
     html: buildInvitationHtml(params),
   })
 }

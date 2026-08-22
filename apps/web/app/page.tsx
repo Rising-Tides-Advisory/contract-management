@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useTranslations } from "next-intl"
+import { APP_NAME } from "@/lib/brand"
 
 /* ─── Locale switcher (cookie-based, no auth required) ──────────── */
 const LP_LOCALES = [
@@ -181,7 +182,7 @@ function ArrowRight({ size = 16 }: { size?: number }) {
   )
 }
 
-function AakedMark({ size = 28, color = "#fff" }: { size?: number; color?: string }) {
+function BrandMark({ size = 28, color = "#fff" }: { size?: number; color?: string }) {
   return (
     <div
       style={{
@@ -271,7 +272,7 @@ function LPNav() {
     >
       {/* Logo */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <AakedMark size={30} />
+        <BrandMark size={30} />
         <span
           style={{
             fontFamily: "var(--font-sora)",
@@ -281,7 +282,7 @@ function LPNav() {
             color: "#fff",
           }}
         >
-          Aaked
+          {APP_NAME}
         </span>
       </div>
 
@@ -651,7 +652,7 @@ function ProductMockup() {
               padding: "4px 8px 14px",
             }}
           >
-            <AakedMark size={22} />
+            <BrandMark size={22} />
             <span
               style={{
                 fontFamily: "var(--font-sora)",
@@ -660,7 +661,7 @@ function ProductMockup() {
                 color: "#fff",
               }}
             >
-              Aaked
+              {APP_NAME}
             </span>
           </div>
           {[
@@ -1503,8 +1504,8 @@ function OpenSourceSection() {
 
   const osCards = OS_CARD_ICONS.map((icon, i) => ({
     icon,
-    title: t(`os.${i}title` as Parameters<typeof t>[0]),
-    desc: t(`os.${i}desc` as Parameters<typeof t>[0]),
+    title: t(`os.${i}title` as Parameters<typeof t>[0], { appName: APP_NAME }),
+    desc: t(`os.${i}desc` as Parameters<typeof t>[0], { appName: APP_NAME }),
   }))
 
   return (
@@ -1567,7 +1568,7 @@ function OpenSourceSection() {
               fontFamily: "var(--font-manrope)",
             }}
           >
-            {t("os.subtitle")}
+            {t("os.subtitle", { appName: APP_NAME })}
           </p>
         </div>
 
@@ -1819,8 +1820,8 @@ function FAQSection() {
   const ref = useReveal()
 
   const FAQ_ITEMS = Array.from({ length: 6 }, (_, i) => ({
-    q: t(`faq.q${i}` as Parameters<typeof t>[0]),
-    a: t(`faq.a${i}` as Parameters<typeof t>[0]),
+    q: t(`faq.q${i}` as Parameters<typeof t>[0], { appName: APP_NAME }),
+    a: t(`faq.a${i}` as Parameters<typeof t>[0], { appName: APP_NAME }),
   }))
 
   return (
@@ -2110,7 +2111,7 @@ function LPFooter() {
           <div
             style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 14 }}
           >
-            <AakedMark size={26} />
+            <BrandMark size={26} />
             <span
               style={{
                 fontFamily: "var(--font-sora)",
@@ -2119,7 +2120,7 @@ function LPFooter() {
                 color: "#fff",
               }}
             >
-              Aaked
+              {APP_NAME}
             </span>
           </div>
           <p
@@ -2198,7 +2199,7 @@ function LPFooter() {
         }}
       >
         <span style={{ fontSize: 12, color: DARK_MUTED, fontFamily: "var(--font-manrope)" }}>
-          {t("footer.copyright")}
+          {t("footer.copyright", { appName: APP_NAME })}
         </span>
         <Link
           href="https://github.com/aaked-app/aakd"

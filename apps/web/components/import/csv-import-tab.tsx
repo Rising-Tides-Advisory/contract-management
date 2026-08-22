@@ -14,6 +14,7 @@ import {
 import { Dropzone } from "./dropzone"
 import { ImportProgressView } from "./import-progress-view"
 import { FIELD_OPTIONS } from "./types"
+import { APP_NAME } from "@/lib/brand"
 
 interface PreviewResponse {
   previewId: string
@@ -149,7 +150,7 @@ export function CsvImportTab({ onJobCreated }: { onJobCreated?: () => void }) {
             <thead className="bg-zinc-50 text-xs text-zinc-500">
               <tr>
                 <th className="px-4 py-2 text-left font-medium">Your column</th>
-                <th className="px-4 py-2 text-left font-medium">Aakd field</th>
+                <th className="px-4 py-2 text-left font-medium">{APP_NAME} field</th>
               </tr>
             </thead>
             <tbody>

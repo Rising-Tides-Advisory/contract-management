@@ -1,4 +1,4 @@
-# Aaked — Launch Content
+# Aakd — Launch Content
 > Ready-to-paste copy for each channel. Written using real Reddit pain quotes as source material.
 > Dates are approximate — adjust to actual launch day.
 
@@ -8,16 +8,16 @@
 
 **Title:**
 ```
-Show HN: Aaked – open-source contract lifecycle management with self-hosted AI
+Show HN: Aakd – open-source contract lifecycle management with self-hosted AI
 ```
 
 **Body:**
 ```
-I built Aaked because I kept seeing the same thing on Reddit: people losing hundreds of dollars a month to auto-renewals buried in contracts they'd signed and forgotten, or spending 97 days watching a deal stall in legal.
+I built Aakd because I kept seeing the same thing on Reddit: people losing hundreds of dollars a month to auto-renewals buried in contracts they'd signed and forgotten, or spending 97 days watching a deal stall in legal.
 
 The existing CLM tools are priced for enterprise. DocuSign Insight starts at $X00/seat/month. Everything else is either a spreadsheet or a $50k/year platform. There was nothing self-hostable, open source, or remotely affordable for smaller teams.
 
-What Aaked does:
+What Aakd does:
 - Contract repository with full-text + semantic (pgvector) search
 - AI metadata extraction: parties, dates, renewal clauses, obligations — extracted from PDF/DOCX with source citations and confidence scores
 - Renewal tracking with email/Slack/Teams alerts before deadlines
@@ -59,11 +59,11 @@ Show HN: We added MCP to our open-source CLM so Claude/Cursor can query your con
 
 **Body:**
 ```
-Three weeks ago I posted Aaked, an open-source CLM. The most surprising feedback was how many people wanted to connect their contracts to Claude or Cursor.
+Three weeks ago I posted Aakd, an open-source CLM. The most surprising feedback was how many people wanted to connect their contracts to Claude or Cursor.
 
 So I added an MCP server.
 
-What it does: your AI assistant can now call into Aaked and answer questions about any contract in your organization.
+What it does: your AI assistant can now call into Aakd and answer questions about any contract in your organization.
 
 Real examples from testing:
 - "What does our vendor contract with Acme say about SLA penalties?" → answer grounded in the actual contract text, with the exact clause cited
@@ -103,9 +103,9 @@ By the time he noticed, he was paying $450/month. A competitor quoted him $140.
 
 401 people upvoted that post. Not because it was unique — because everyone recognized it.
 
-I spent the last several months building Aaked to solve exactly this.
+I spent the last several months building Aakd to solve exactly this.
 
-Aaked is an open-source contract management platform with self-hosted AI. It tracks renewal dates, extracts key terms automatically, and alerts you before deadlines — so you don't find out you're paying $450 after you've already been paying $450 for a year.
+Aakd is an open-source contract management platform with self-hosted AI. It tracks renewal dates, extracts key terms automatically, and alerts you before deadlines — so you don't find out you're paying $450 after you've already been paying $450 for a year.
 
 It's built for teams that can't afford $50k/year enterprise CLM tools and don't trust their Google Drive folder to protect them.
 
@@ -121,7 +121,7 @@ If contract sprawl is eating your company quietly, this is for you.
 ```
 I shipped something today that I've been building for a few months.
 
-It's called Aaked — open-source contract lifecycle management.
+It's called Aakd — open-source contract lifecycle management.
 
 The honest version of what I was seeing:
 
@@ -160,7 +160,7 @@ If you've ever gotten burned by a contract clause you didn't notice — this is 
 ## 4. GitHub Discussions Pinned Threads (set up on launch day)
 
 ### Thread 1: Roadmap
-**Title:** Aaked Roadmap — vote on what we build next
+**Title:** Aakd Roadmap — vote on what we build next
 
 ```
 Here's where we stand and what's coming.
@@ -192,10 +192,10 @@ Vote by reacting 👍 to this post, or reply with what you need most. What's blo
 ```
 
 ### Thread 2: Self-hosting Help
-**Title:** Self-hosting Aaked — ask your setup questions here
+**Title:** Self-hosting Aakd — ask your setup questions here
 
 ```
-Running Aaked on your own infrastructure? This is the right place.
+Running Aakd on your own infrastructure? This is the right place.
 
 Quick start:
 git clone https://github.com/aaked-app/aakd
@@ -214,10 +214,10 @@ Reply here with what you're running on and any issues you hit. We'll build a sel
 ```
 
 ### Thread 3: Show & Tell
-**Title:** Show & tell — what are you building with Aaked?
+**Title:** Show & tell — what are you building with Aakd?
 
 ```
-Using Aaked for something interesting? Self-hosting it in a weird place? Connected it to your stack in a way we didn't expect?
+Using Aakd for something interesting? Self-hosting it in a weird place? Connected it to your stack in a way we didn't expect?
 
 Share it here.
 
@@ -231,13 +231,13 @@ This is also the right place to share screenshots, demos, or integrations.
 ## 5. Copy Snippets (for DMs, replies, cold outreach)
 
 **One-liner:**
-> Aaked is open-source contract management with self-hosted AI — renewal alerts, AI extraction, contract Q&A, and an MCP server so Claude can read your contracts directly. Five-minute Docker deploy.
+> Aakd is open-source contract management with self-hosted AI — renewal alerts, AI extraction, contract Q&A, and an MCP server so Claude can read your contracts directly. Five-minute Docker deploy.
 
 **When someone says "we use spreadsheets":**
-> That works until it doesn't — usually right before a renewal you missed or a clause that auto-committed you to something. Aaked sits on top of your existing files and adds extraction, alerts, and search. It's open source, self-hostable, and free if you run your own infra.
+> That works until it doesn't — usually right before a renewal you missed or a clause that auto-committed you to something. Aakd sits on top of your existing files and adds extraction, alerts, and search. It's open source, self-hostable, and free if you run your own infra.
 
 **When someone asks "how is this different from DocuSign?":**
-> DocuSign manages the signing ceremony. Aaked manages everything that happens before and after — tracking, extraction, alerts, Q&A, and obligations. It integrates with DocuSeal for signing rather than trying to compete with DocuSign on e-signature.
+> DocuSign manages the signing ceremony. Aakd manages everything that happens before and after — tracking, extraction, alerts, Q&A, and obligations. It integrates with DocuSeal for signing rather than trying to compete with DocuSign on e-signature.
 
 **When a developer asks about the stack:**
 > Next.js 14 App Router, TypeScript, Prisma + PostgreSQL with pgvector for semantic search, BullMQ + Redis for background jobs, Better Auth, S3-compatible storage, Docker for self-hosting. AGPL-3.0.
@@ -256,7 +256,7 @@ This is also the right place to share screenshots, demos, or integrations.
 
 **Title:**
 ```
-Aaked – self-hostable contract management with local AI (Docker, AGPL)
+Aakd – self-hostable contract management with local AI (Docker, AGPL)
 ```
 
 **Body:**
@@ -298,12 +298,12 @@ Happy to answer questions about the self-hosting setup, the Ollama integration, 
 
 **Title:**
 ```
-Aaked – open-source CLM with AI extraction and an MCP server (AGPL, self-hostable)
+Aakd – open-source CLM with AI extraction and an MCP server (AGPL, self-hostable)
 ```
 
 **Body:**
 ```
-Releasing Aaked as open source today.
+Releasing Aakd as open source today.
 
 It's a contract lifecycle management platform — think: upload PDFs and DOCX files, extract key terms with AI, track renewals, run contract Q&A, manage approvals and e-signatures, all self-hostable.
 
@@ -349,7 +349,7 @@ The existing solutions:
 
 Nothing in between. So I built it.
 
-**Aaked** is an open-source, self-hostable contract management platform. What it does:
+**Aakd** is an open-source, self-hostable contract management platform. What it does:
 
 - AI extraction: upload a PDF/DOCX, get parties, dates, renewal clauses, obligations extracted automatically — with source citations and confidence scores
 - Renewal alerts before deadlines (email, Slack, Teams)

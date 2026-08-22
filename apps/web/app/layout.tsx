@@ -10,6 +10,7 @@ import { isRtl, type Locale } from "@/lib/i18n/config"
 import { PostHogProvider } from "@/components/providers/posthog-provider"
 import { CookieConsent } from "@/components/cookie-consent"
 import "./globals.css"
+import { APP_NAME } from "@/lib/brand"
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -31,7 +32,7 @@ const sora = Sora({
 })
 
 export const metadata: Metadata = {
-  title: "Aaked",
+  title: APP_NAME,
   description: "Open source, self-hostable contract management",
 }
 

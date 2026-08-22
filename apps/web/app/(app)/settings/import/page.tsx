@@ -16,6 +16,7 @@ import { PandaDocTab } from "@/components/import/pandadoc-tab"
 import { ClmExportTab } from "@/components/import/clm-export-tab"
 import { ImportHistory } from "@/components/import/import-history"
 import { useTranslations } from "next-intl"
+import { APP_NAME } from "@/lib/brand"
 
 const VALID_TABS = new Set(["csv", "batch", "gdrive", "pandadoc", "clm"])
 
@@ -43,7 +44,7 @@ function ImportPageBody() {
       <div>
         <h1 className="text-xl font-semibold text-foreground">{t("title")}</h1>
         <p className="text-sm text-muted-foreground">
-          {t("subtitle")}
+          {t("subtitle", { appName: APP_NAME })}
         </p>
       </div>
 
